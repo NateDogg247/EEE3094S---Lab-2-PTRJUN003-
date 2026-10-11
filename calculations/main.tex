@@ -38,6 +38,7 @@
 \newcommand{\thead}{\rowcolor{AngelBlue!28}}
 \input{\ReportRoot repository.tex}
 \begin{document}
+\thispagestyle{plain}
 
 \begin{center}{\LARGE\textbf{Worked Calculations}}\\[4pt]
 {\large EEE3094S Lab 2 -- PTRJUN003}\\[4pt]
@@ -70,6 +71,8 @@ g_2&=1+R_5/R_6,&g_3&=(1+R_{10}/(R_9+R_{\rm th}))R_8/(R_7+R_8).
 \end{align}
 \clearpage
 \section{Detailed Calculations}\label{app:calculations}
+\input{\ReportRoot sections/model_calculations.tex}
+\page
 \subsection{Identification and Timing}
 \Tref{tab:rawsamples} gives selected original samples and derived velocities. The finite manual step is evident in the input column. Endpoint times are listed for consistency with the CSV; each derivative physically belongs to its interval midpoint.
 \begin{table}[H]\centering\small
@@ -100,7 +103,9 @@ The exponential fit minimises $\sum_{17\le t_i\le60}[v_i-V_\infty(1-e^{-(t_i-t_0
 The sensor least-squares fit in \Eref{eq:sensor} excludes zero and clipped pairs. The check $k_s(2.703)=0.93(2.703)=2.51379$ V agrees with the recorded 2.513 V within rounding.
 \page
 
+\input{\ReportRoot sections/root_locus_calculations.tex}
 \subsection{Root-Locus Angle and Magnitude Checks}
+\textbf{Step 6 -- Verify the pole position.}
 The locus for variable $K_p$ uses $G_0(s)=k_sG_y(s)=(Ak_s/\tau)/[s(s+1/\tau)]$, where $Ak_s/\tau=1.638959$ s$^{-2}$. At the selected upper pole $s_d=-0.0617284+j0.1402123$,
 \begin{align}
 \angle s_d&=113.76147^\circ,\qquad
@@ -112,7 +117,9 @@ K_p&=\frac1{|G_0(s_d)|}
 \end{align}
 Both the negative-feedback angle criterion and magnitude criterion are satisfied. The quadratic roots independently give the same pole pair.
 
+\page
 \subsection{Nominal Step and Settling Calculation}
+\textbf{Step 7 -- Evaluate the time response.}
 Substituting into \Eref{eq:exactstep},
 \begin{equation}
 y(t)=5\left[1-e^{-0.061728395t}
@@ -124,13 +131,13 @@ y(t_p)=5[1+e^{-0.061728395(22.405969)}]=6.254019\unit{m},
 \end{equation}
 so $M_p=(6.254019-5)/5\times100=25.080375\%$.
 
-The error envelope satisfies $|y-5|/5\le e^{-\sigma t}/\sqrt{1-\zeta^2}$. Solving this bound for 2\% gives
+\textbf{Step 8 -- Calculate settling.} The error envelope satisfies $|y-5|/5\le e^{-\sigma t}/\sqrt{1-\zeta^2}$. Solving this bound for 2\% gives
 \begin{equation}
 T_{\rm env}=-\frac{\ln(0.02\sqrt{1-0.4029299^2})}{0.061728395}=64.80975\unit{s}.
 \end{equation}
 Actual settling is found by evaluating the full response, locating the last sample for which $|y-5|>0.1$ m, and taking the next sample. A 0.005 s grid gives 54.89 s. This definition agrees with reference-based settling calculations \cite{stepinfo}.
 
-Command headroom follows from $u=2.5+K_pk_s(5-y)$: the highest command is 2.566588 V at the step, and the lowest is $2.5-0.01432(0.93)(1.254019)=2.483299$ V at the altitude peak. Neither reaches the 0 or 5 V limit.
+\textbf{Step 9 -- Check command headroom.} Command headroom follows from $u=2.5+K_pk_s(5-y)$: the highest command is 2.566588 V at the step, and the lowest is $2.5-0.01432(0.93)(1.254019)=2.483299$ V at the altitude peak. Neither reaches the 0 or 5 V limit.
 \page
 
 \subsection{Aerodynamic and Component Uncertainty}

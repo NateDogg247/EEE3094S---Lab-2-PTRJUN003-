@@ -6,7 +6,7 @@ Junaid Allan Pieters — Proportional Control of the Kitticopter, University of 
 - [Worked calculations PDF](calculations/PTRJUN003_Lab2_Calculations.pdf): identification, root locus, response, circuit loading, robustness and experimental metrics.
 - [Code guide](CODE_GUIDE.md): module responsibilities and instructions.
 
-The report retains the supplied template's Computer Modern font, 12 pt text, one-inch margins and spacing, with angel-blue accents and the UCT logo. Original photos and screenshots are in the appendices. Internal references and GitHub folder/file links are clickable.
+The report follows the supplied previous-year example with numbered chapter headings, a Prepared by / Prepared for cover, a separate conclusion page and a calculation/simulation/experiment comparison. It retains the template's Computer Modern font, 12 pt text, one-inch margins and spacing, with angel-blue accents and the UCT logo. Original photos and screenshots are in the appendices. Internal references and GitHub folder/file links are clickable.
 
 ## Project map
 

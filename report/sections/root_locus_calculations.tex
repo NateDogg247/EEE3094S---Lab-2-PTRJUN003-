@@ -1,0 +1,41 @@
+\subsection{Root-Locus Geometry and Gain Bound}
+\textbf{Step 1 -- Form the loop without the variable gain.} Include the sensor coefficient explicitly:
+\begin{equation}
+G_0(s)=k_sG_y(s)=\frac{14.2748(0.93)}{s(8.1s+1)}
+=\frac{1.638958519}{s(s+0.123456790)}.
+\end{equation}
+\textbf{Step 2 -- Locate poles and asymptotes.} The two poles are $p_1=0$ and $p_2=-0.123456790$; there are no finite zeros. The real-axis locus is between the poles. With $n-m=2$,
+\begin{equation}
+\sigma_a=\frac{p_1+p_2}{2}=-0.061728395,\qquad
+\theta_\ell=\frac{(2\ell+1)180^\circ}{2}=90^\circ,270^\circ.
+\end{equation}
+\textbf{Step 3 -- Calculate breakaway.} From $1+K_pG_0(s)=0$,
+\begin{align}
+K_p(s)&=-\frac{s(8.1s+1)}{14.2748(0.93)},\\
+\frac{dK_p}{ds}&=-\frac{16.2s+1}{13.275564}=0
+\quad\Rightarrow\quad s_b=-\frac1{16.2}=-0.061728395,\\
+K_{p,b}&=\frac1{4(8.1)(14.2748)(0.93)}=0.002324888.
+\end{align}
+\textbf{Step 4 -- Apply the overshoot bound.} Solving $0.30=e^{-\pi\zeta/\sqrt{1-\zeta^2}}$ gives
+\begin{equation}
+\zeta_{\min}=\frac{-\ln0.30}{\sqrt{\pi^2+(\ln0.30)^2}}=0.357857131.
+\end{equation}
+The characteristic polynomial is $s^2+s/8.1+(14.2748)(0.93)K_p/8.1$. Matching coefficients gives $\omega_n^2=AK_pk_s/\tau$ and $2\zeta\omega_n=1/\tau$, hence
+\begin{equation}
+K_p<\frac1{4\tau Ak_s\zeta_{\min}^2}
+=\frac1{4(8.1)(14.2748)(0.93)(0.357857131)^2}=0.018154432.
+\end{equation}
+The adopted $K_p=0.01432$ lies between breakaway and the nominal overshoot limit. The complex branches have fixed decay rate $\sigma=1/(2\tau)=0.061728395$ s$^{-1}$; they cannot reach $\sigma=4/30=0.133333$ s$^{-1}$ by changing $K_p$ alone.
+\page
+\subsection{Selected Gain and Pole Calculations}
+\textbf{Step 5 -- Check the adopted gain.} This value is retained from the supplied controller design; the calculations test its performance. Substitution gives
+\begin{align}
+q&=AK_pk_s=(14.2748)(0.01432)(0.93)=0.190106076,\\
+G_{cl}(s)&=\frac{0.190106076}{8.1s^2+s+0.190106076},\\
+\omega_n&=\sqrt{q/\tau}=\sqrt{0.190106076/8.1}=0.153198845\unit{rad/s},\\
+\zeta&=\frac1{2\sqrt{\tau q}}=\frac1{2\sqrt{8.1(0.190106076)}}=0.402929900,\\
+\omega_d&=\sqrt{\omega_n^2-\sigma^2}=0.140212308\unit{rad/s},\\
+s_{1,2}&=\frac{-1\pm\sqrt{1-4(8.1)(0.190106076)}}{2(8.1)}
+=-0.061728395\pm j0.140212308.
+\end{align}
+The damping predicts $M_p=100e^{-\pi(0.402929900)/\sqrt{1-0.402929900^2}}=25.080375\%$. The next angle and magnitude checks verify that these poles lie on the proportional root locus.

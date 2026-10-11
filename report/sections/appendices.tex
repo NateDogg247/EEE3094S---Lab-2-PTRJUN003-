@@ -28,14 +28,14 @@ The 0.001 m differences between the readouts are consistent with rounding or asy
 \Fref{fig:originalmodel} preserves the supplied model image. Its visible values match the identified plant, sensor coefficient and selected gain used in \Sref{sec:design}.
 \fig{../../data/session2/simulink_model.png}{1}{Supplied Simulink model: $k_s=0.93$, $K_p=0.01432$, $u_h=2.5$ V, velocity plant $14.2748/(8.1s+1)$ and position integrator.}{fig:originalmodel}
 \Fref{fig:originalscope} begins at a 2.5 m reference while the output starts near zero; the reference subsequently changes to 5 m at approximately 2.5 s. The trace therefore combines startup and a reference change.
-\fig{../../data/session2/simulink_scope.png}{.88}{Original supplied scope with reference and altitude traces. The initial output is not settled at the initial reference.}{fig:originalscope}
+\fig{../../data/session2/simulink_scope.png}{.80}{Original supplied scope with reference and altitude traces. The initial output is not settled at the initial reference.}{fig:originalscope}
 The regenerated 0 to 5 m step in \Fref{fig:nominal} avoids combining these initial conditions. The included \texttt{matlab/build\_simulink\_model.m} creates a native model with explicit 0--5 V command saturation when executed in Simulink. The original native \texttt{.slx} file was not supplied.
 \page
 
 \section{Complete Circuit and Interface}\label{app:circuit}
 \subsection{Signal Stages}
 \Fref{fig:circuit} uses the component numbering of the supplied circuit files. Its bias input connects to the P1 wiper in \Fref{fig:biasnetwork}; the two figures together define the complete controller signal and bias networks.
-\begin{figure}[H]\centering\resizebox{\linewidth}{!}{\input{\ReportRoot sections/circuit.tex}}
+\begin{figure}[H]\centering\resizebox{.94\linewidth}{!}{\input{\ReportRoot sections/circuit.tex}}
 \caption{Labelled three-stage proportional controller. DAC-0 feeds the inverting sensor branch; DAC-1 feeds the non-inverting reference branch. ADC-2 monitors the sensor and ADC-1 receives the command.}\label{fig:circuit}
 \end{figure}
 All three op-amps use pin 7 for $+15$ V, pin 4 for $-15$ V, pin 2 for the inverting input, pin 3 for the non-inverting input and pin 6 for output. Pins 1 and 5 (offset null) and pin 8 (NC) are unused in the documented 741 design. \Tref{tab:daq} gives the interface mapping.
@@ -105,6 +105,8 @@ The ideal buffered result 0.0147 differs by 2.57\%, while the selected model val
 \page
 
 \section{Detailed Calculations}\label{app:calculations}
+\input{\ReportRoot sections/model_calculations.tex}
+\page
 \subsection{Identification and Timing}
 \Tref{tab:rawsamples} gives selected original samples and derived velocities. The finite manual step is evident in the input column. Endpoint times are listed for consistency with the CSV; each derivative physically belongs to its interval midpoint.
 \begin{table}[H]\centering\small
@@ -135,7 +137,9 @@ The exponential fit minimises $\sum_{17\le t_i\le60}[v_i-V_\infty(1-e^{-(t_i-t_0
 The sensor least-squares fit in \Eref{eq:sensor} excludes zero and clipped pairs. The check $k_s(2.703)=0.93(2.703)=2.51379$ V agrees with the recorded 2.513 V within rounding.
 \page
 
+\input{\ReportRoot sections/root_locus_calculations.tex}
 \subsection{Root-Locus Angle and Magnitude Checks}
+\textbf{Step 6 -- Verify the pole position.}
 The locus for variable $K_p$ uses $G_0(s)=k_sG_y(s)=(Ak_s/\tau)/[s(s+1/\tau)]$, where $Ak_s/\tau=1.638959$ s$^{-2}$. At the selected upper pole $s_d=-0.0617284+j0.1402123$,
 \begin{align}
 \angle s_d&=113.76147^\circ,\qquad
@@ -147,7 +151,9 @@ K_p&=\frac1{|G_0(s_d)|}
 \end{align}
 Both the negative-feedback angle criterion and magnitude criterion are satisfied. The quadratic roots independently give the same pole pair.
 
+\page
 \subsection{Nominal Step and Settling Calculation}
+\textbf{Step 7 -- Evaluate the time response.}
 Substituting into \Eref{eq:exactstep},
 \begin{equation}
 y(t)=5\left[1-e^{-0.061728395t}
@@ -159,13 +165,13 @@ y(t_p)=5[1+e^{-0.061728395(22.405969)}]=6.254019\unit{m},
 \end{equation}
 so $M_p=(6.254019-5)/5\times100=25.080375\%$.
 
-The error envelope satisfies $|y-5|/5\le e^{-\sigma t}/\sqrt{1-\zeta^2}$. Solving this bound for 2\% gives
+\textbf{Step 8 -- Calculate settling.} The error envelope satisfies $|y-5|/5\le e^{-\sigma t}/\sqrt{1-\zeta^2}$. Solving this bound for 2\% gives
 \begin{equation}
 T_{\rm env}=-\frac{\ln(0.02\sqrt{1-0.4029299^2})}{0.061728395}=64.80975\unit{s}.
 \end{equation}
 Actual settling is found by evaluating the full response, locating the last sample for which $|y-5|>0.1$ m, and taking the next sample. A 0.005 s grid gives 54.89 s. This definition agrees with reference-based settling calculations \cite{stepinfo}.
 
-Command headroom follows from $u=2.5+K_pk_s(5-y)$: the highest command is 2.566588 V at the step, and the lowest is $2.5-0.01432(0.93)(1.254019)=2.483299$ V at the altitude peak. Neither reaches the 0 or 5 V limit.
+\textbf{Step 9 -- Check command headroom.} Command headroom follows from $u=2.5+K_pk_s(5-y)$: the highest command is 2.566588 V at the step, and the lowest is $2.5-0.01432(0.93)(1.254019)=2.483299$ V at the altitude peak. Neither reaches the 0 or 5 V limit.
 \page
 
 \subsection{Aerodynamic and Component Uncertainty}
@@ -237,7 +243,7 @@ For the 5.033 m reference the 8\% band is $5.033(1\pm0.08)=4.63036$--5.43564 m. 
 The command-bias calculation uses \Eref{eq:bias}: $\delta y=0.002/(0.01432\times0.93)=0.150177$ m. The illustrative test in \Fref{fig:disturbance} injects a positive 2 mV bias at 70 s; it is a model prediction rather than a recorded disturbance experiment.
 \page
 
-\section{Additional Validation and Response Plots}\label{app:validation}
+\section{Additional Validation Plots}\label{app:validation}
 \Fref{fig:posval} checks the integrated position response; \Fref{fig:aero} compares the three aerodynamic cases listed in \Tref{tab:aero}. The underlying values are retained as CSV and JSON in the \texttt{results} folder.
 \fig{position_validation}{.88}{Position-domain model comparison and residuals for the retained identification run.}{fig:posval}
 \fig{aerodynamic_robustness}{.88}{Predicted altitude responses for $b=0.9b_0,b_0,1.1b_0$, with local thrust slope held fixed.}{fig:aero}
@@ -247,7 +253,7 @@ The command-bias calculation uses \Eref{eq:bias}: $\delta y=0.002/(0.01432\times
 This simulation tests one stated disturbance amplitude. It does not imply rejection of arbitrary disturbance magnitudes or establish experimental disturbance performance.
 \page
 
-\section{Identification Data and Verification Code}\label{app:data}
+\section{Identification Data and Code}\label{app:data}
 \subsection{Data Provenance}
 The unmodified \texttt{data/session1/PTRJUN003\_raw.csv} contains time, command voltage, sensor voltage, altitude and stored speed. The processed copy excludes the 31 pre-reset rows and adds recalculated velocity, midpoint time and model predictions.
 
@@ -281,7 +287,7 @@ root_locus_design
 \end{lstlisting}
 \RepoFile{CODE_GUIDE.md}{The code guide} records dependencies, file responsibilities and step conventions. Voltage identification uses a 2.5 to 5.0 V step ($\Delta u=2.5$ V); the nominal controller test uses a 0 to 5 m altitude reference.
 \page
-\section{Repository Navigation and Reproduction}\label{app:repository}
+\section{Repository and Reproduction}\label{app:repository}
 \RepoStatus\ Open the \href{\RepoRoot}{complete GitHub repository} or use the folder links in \Tref{tab:repo}. Figure, table, equation and appendix references remain internal PDF hyperlinks. The repository guide and calculation index explain how to reproduce each result.
 \begin{table}[H]\centering\small
 \caption{Clickable evidence map and corresponding Git folders.}\label{tab:repo}

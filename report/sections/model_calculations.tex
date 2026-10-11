@@ -1,0 +1,32 @@
+\subsection{Model Derivation and Signal Definitions}
+\begin{table}[H]\centering\small
+\caption{Model notation and units.}\label{tab:signals}
+\begin{tabularx}{\linewidth}{lXl}\toprule\thead
+Symbol & Description & Unit\\\midrule
+$x,y,v=\dot y$ & Reference altitude, altitude, vertical velocity & m, m, m/s\\
+$f_t,g,d_a$ & Mass-normalised thrust, gravity, disturbance & m/s$^2$\\
+$b,k_T$ & Drag coefficient; local voltage-to-thrust slope & s$^{-1}$; m/(s$^2$ V)\\
+$u,u_h,\delta u$ & Command, hover command, $u-u_h$ & V\\
+$A,\tau$ & Velocity gain; velocity time constant & m/(s V); s\\
+$k_s$ & Position-to-voltage coefficient & V/m\\
+$r_v,y_v,e_v$ & Reference, sensor, error voltage & V\\
+$K_p$ & Proportional voltage-error gain & V/V\\\bottomrule
+\end{tabularx}\end{table}
+Start from $\ddot y=f_t-b\dot y-g+d_a$, with $f_t=g+k_T(u-u_h)$. For $d_a=0$, zero initial conditions and $v=\dot y$,
+\begin{align}
+\dot v+bv&=k_T\delta u,\\
+(s+b)V(s)&=k_T\Delta U(s),\\
+G_v(s)&=\frac{k_T}{s+b}=\frac{k_T/b}{s/b+1}=\frac{A}{\tau s+1},\\
+G_y(s)&=\frac{G_v(s)}s=\frac{A}{s(\tau s+1)}.
+\end{align}
+The identified parameters give $b=1/8.1=0.123456790$ s$^{-1}$ and $k_T=14.2748/8.1=1.762320988$ m/(s$^2$ V). The hover voltage does not imply $k_T=g/u_h$.
+
+For negative feedback, $E_y=X-Y$ and $L=K_pk_sG_y$:
+\begin{equation}
+\frac{E_y(s)}{X(s)}=\frac1{1+L(s)}=\frac{\tau s^2+s}{\tau s^2+s+AK_pk_s}.
+\end{equation}
+For a step $X=x_0/s$, the final-value theorem gives $e_\infty=\lim_{s\to0}sE_y(s)=0$. For a ramp $X=a_r/s^2$,
+\begin{equation}
+e_\infty=\frac{a_r}{AK_pk_s},\qquad K_v=AK_pk_s=0.190106076.
+\end{equation}
+A parabolic reference has unbounded steady error. A constant acceleration disturbance $d_0$ instead gives $y_\infty-x_\infty=d_0/(k_TK_pk_s)$. For an input bias, $d_0=k_T\delta u_b$, so $\delta y=\delta u_b/(K_pk_s)$.
