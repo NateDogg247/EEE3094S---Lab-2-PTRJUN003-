@@ -2,11 +2,7 @@
 
 Junaid Allan Pieters — Proportional Control of the Kitticopter, University of Cape Town.
 
-- [Report PDF](report/PTRJUN003_Lab2_Report.pdf): **9 main pages and 3 appendix pages; 15 PDF pages in total**, including a cover, contents and references in the total.
-- [Worked calculations PDF](calculations/PTRJUN003_Lab2_Calculations.pdf): identification, root locus, response, circuit loading, robustness and experimental metrics.
-- [Code guide](CODE_GUIDE.md): module responsibilities and instructions.
-
-The report follows the four required sections: System Modelling, System Identification, Controller Design and Controller Tests. It retains Computer Modern 12 pt text, angel-blue accents and the UCT logo; text, figures, captions, equations and tables are left aligned. Original parameter-check, board and demo evidence occupy two appendix pages; essential circuit and root-locus calculations occupy one more. Full identification calculations remain in the standalone supplement. The supplied Simulink model and enlarged KiCad stages are in the main text, with the original scope retained in the appendix. Numerical plots are rendered by Python and have MATLAB reproduction code. Figures and cross-references link directly to the supporting GitHub folders.
+The report follows the four required sections: System Modelling, System Identification, Controller Design and Controller Tests. Full identification calculations remain in the standalone supplement. The supplied Simulink model and enlarged KiCad stages are in the main text, with the original scope retained in the appendix. Numerical plots are rendered by Python and have MATLAB reproduction code. Figures and cross-references link directly to the supporting GitHub folders.
 
 ## Project map
 
