@@ -9,7 +9,7 @@ This revision uses the supplied LTspice source, KiCad source and circuit-referen
 - U3: R7-R10 = 100 kohm. U2 enters the positive divider; P1 wiper enters R9 on the negative side. ADC-1 receives U3 output.
 - ADC-2 monitors DAC-0 sensor feedback.
 - Bias: R11 = 3.9 kohm to ground; P1 = 10 kohm; R12 = 1.2 kohm across the full pot; R13 = 22 kohm to -15 V.
-- Three 741-type stages with +15/-15 V rails and common DAQ ground. The design includes six 100 nF decoupling capacitors, one rail-to-ground capacitor per rail per op-amp. Physical device markings and capacitor connections require board verification.
+- Three 741-type stages with +15/-15 V rails and common DAQ ground. The current KiCad redraw contains no capacitors, and hides the unused pin-1/pin-5 graphics and cross marks. The visible active pins retain their physical assignments. Physical device markings and underside wiring are not independently verified by the board photograph.
 
 The supplied KiCad file/README labelled R11 at +15 V. The supplied LTspice source and circuit image put R11 at ground. The bundled KiCad copy corrects that endpoint label to ground. The original Library artifact is unchanged.
 
@@ -24,3 +24,7 @@ For the unbuffered bias source `Vth`, `Rth`, define `r=R10/(R9+Rth)`. Then `g3=(
 Calibration at equal reference/sensor gives W=0.783080594, open-circuit Vth=-2.635575036 V, Rth=5423.001448 ohm and loaded output 2.500 V. Thus g3=0.97427980 and Kp=0.014321913 V/V, consistent with the supplied Simulink value 0.01432.
 
 The full derivation, schematic, bias network and pin/DAQ mapping are in Appendix D. Independent loop-resistor tolerance results hold the bias network nominal and assume hover recalibration. Their failures already rule out an all-component guarantee.
+
+## Connected controller test clarification
+
+The student confirmed that the full three-op-amp circuit remained connected for the controller test. The physical potentiometer was adjusted until the reported input was approximately 2.565 V to improve setpoint tracking and overshoot. This observation has no logged time/terminal measurement record and is not substituted for the theoretical 2.500 V zero-error hover bias. The retained terminal display later shows a 2.498 V command.

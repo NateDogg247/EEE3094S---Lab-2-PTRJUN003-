@@ -22,7 +22,7 @@ Component tolerance $\pm10\%$ & Examine changes in loop gain, reference/feedback
 \item Document the three-stage controller circuit and assess the experimental response against the requirements.
 \end{enumerate}
 
-The analysis uses the supplied CSV, circuit files and test display. Original photographs and screenshots are in the appendices; main-text plots are regenerated from data or equations. One identification run and one controller test are retained. Reproducible code and calculations are available in the \href{\RepoRoot}{GitHub repository}.
+The supplied CSV, circuit files and test display support one identification run and one controller test. Numerical plots use Python with MATLAB reproduction code. Main-text Simulink and KiCad diagrams link to their sources; photographs and full derivations are in the appendices.
 \page
 
 \section{System Modelling}\label{sec:model}
@@ -54,7 +54,7 @@ At hover, $f_{t,h}=g$ and $u_h=2.5$ V. The local actuator relation is $f_t=g+k_T
 \begin{equation}\label{eq:dynamic}
 \ddot y+b\dot y=k_T\delta u+d_a,\qquad \delta u=u-u_h.
 \end{equation}
-With zero initial conditions and $d_a=0$, the velocity and position plants are
+The thrust-to-velocity plant is $V(s)/\Delta F_t(s)=1/(s+b)$. Multiplication by $k_T$ gives the voltage-input model. With zero initial conditions and $d_a=0$, the voltage-input plants are
 \begin{align}
 G_v(s)&=\frac{V(s)}{\Delta U(s)}=\frac{k_T}{s+b}=\frac{A}{\tau s+1},\quad
 \tau=\frac1b,\quad A=\frac{k_T}{b},\label{eq:velocityplant}\\
@@ -109,11 +109,11 @@ Differentiating altitude removes the position integrator, giving a first-order v
 
 \subsection{Methodology}
 \subsubsection{Step-Testing}
-The Session 1 input circuit described in the brief uses a potentiometer to set the ADC command. The retained record starts at rest near 2.5 V and changes to 5 V. The nominal input increment is $\Delta u=5.0-2.5=2.5$ V. The final voltage is held long enough to identify a steady velocity. \Fref{fig:record} shows the input, position and sensor channels from this run.
+The retained Session 1 command record starts at rest near 2.5 V and changes to 5 V. This voltage-identification run is distinct from the connected three-op-amp controller test described in \Sref{sec:tests}. The nominal input increment is $\Delta u=5.0-2.5=2.5$ V. The final voltage is held long enough to identify a steady velocity. \Fref{fig:record} shows the input, position and sensor channels from this run.
 
 \subsection{Experimental Setup and Data Files}
 The \RepoLink{data/session1}{Session 1 data folder} contains the unmodified \texttt{PTRJUN003\_raw.csv}; \Aref{app:data} gives its provenance. Of 1,634 rows, the first 31 precede a clock reset from 9.5 to 0.1 s and contain zero altitude. They are excluded from analysis. The retained 1,603 samples span 0.1--160.3 s at 0.1 s spacing. The reset is not another trial.
-\fig{identification_record}{.70}{Recorded identification input and outputs. The sensor-voltage plateau is clipping at 10 V; altitude continues increasing.}{fig:record}
+\plot{identification_record}{.70}{Recorded identification input and outputs. The sensor-voltage plateau is clipping at 10 V; altitude continues increasing.}{fig:record}
 \page
 
 \subsection{Data Processing}
@@ -148,7 +148,7 @@ The single-point check at 17.0 s is $2.513/2.703=0.92971$ V/m. The regression us
 \subsection{Results and Analysis}
 \subsubsection{Step Response Analysis}
 \Fref{fig:velocity} compares the differentiated measurements with the exponential fit and shows the 63.2\% crossing. Velocity tends to a constant while altitude continues rising, as expected for the lag-plus-integrator model.
-\fig{velocity_identification}{.73}{Velocity identification. The steady tail determines gain; interpolation and fitting determine the time constant.}{fig:velocity}
+\plot{velocity_identification}{.73}{Velocity identification. The steady tail determines gain; interpolation and fitting determine the time constant.}{fig:velocity}
 \subsubsection{Identification Results}
 \Tref{tab:id} compares the two estimation methods. These are estimates from one run, not independent repeated trials. The rounded parameters reproduce the values used in the supplied Simulink model.
 \begin{table}[H]\centering\small
@@ -176,7 +176,7 @@ v_{\rm mod}(t)&=2.5A(1-e^{-r/\tau}),\\
 y_{\rm mod}(t)&=2.5A\{r-\tau(1-e^{-r/\tau})\},\qquad r=\max(t-t_0,0).
 \end{align}
 The effective onset fitted above is retained. \Fref{fig:validation} checks sensor linearity and velocity residuals; \Tref{tab:validation} reports error magnitudes.
-\fig{validation_sensor}{.91}{Sensor calibration from unsaturated pairs and velocity residuals outside the fitting interval.}{fig:validation}
+\plot{validation_sensor}{.91}{Sensor calibration from unsaturated pairs and velocity residuals outside the fitting interval.}{fig:validation}
 \begin{table}[H]\centering\small
 \caption{Validation errors using the rounded design model.}\label{tab:validation}
 \begin{tabularx}{\linewidth}{Xrr}\toprule\thead
@@ -240,108 +240,87 @@ Overshoot & $100e^{-\pi(0.402930)/\sqrt{1-0.402930^2}}$ & 25.0804\%\\
 Peak time & $\pi/0.140212$ & 22.4060 s\\
 Peak altitude & $5(1+0.250804)$ & 6.25402 m\\\bottomrule
 \end{tabularx}\end{table}
-\fig{root_locus}{.86}{Proportional root locus. The selected poles satisfy the 30\% overshoot boundary; the 30 s envelope target is beyond the attainable complex branches.}{fig:locus}
+\plot{root_locus}{.86}{Proportional root locus. The selected poles satisfy the 30\% overshoot boundary; the 30 s envelope target is beyond the attainable complex branches.}{fig:locus}
 The exact step response is
 \begin{equation}\label{eq:exactstep}
 y(t)=5\!\left[1-e^{-\sigma t}\!\left(\cos\omega_dt+\frac{\sigma}{\omega_d}\sin\omega_dt\right)\right].
 \end{equation}
 The usual $4/\sigma=64.8$ s settling approximation is conservative here. The envelope bound $-\ln[0.02\sqrt{1-\zeta^2}]/\sigma=64.81$ s and the actual final 2\% crossing, 54.89 s, are different quantities.
 \page
-
-\subsection{Simulink Model Design}\label{sec:simulation}
+\subsection{Simulink Model and Results}\label{sec:simulation}
 \subsubsection{Block Diagram Implementation}
-The implementation follows \Fref{fig:block}: reference scaling, error subtraction, $K_p$, hover addition, 0--5 V saturation, hover subtraction, the velocity lag and an integrator. The original model and scope are in \Aref{app:simulink}. The supplied scope includes startup from zero while the reference begins at 2.5 m. For an unambiguous demonstration test, the regenerated model uses zero initial altitude/velocity and a 0 to 5 m reference step.
+\Fref{fig:originalmodel} is the supplied Simulink diagram. It uses 0.93 V/m reference/sensor gains, $K_p=0.01432$, hover addition/subtraction, a velocity lag and position integrator. The reconstruction sets command limits to 0--5 V and sensor limits to 0--10 V.
+\repfig{data/session2}{../../data/session2/simulink_model.png}{1}{Supplied Simulink architecture. Native model-building and execution scripts: \RepoLink{matlab/simulink}{Simulink folder}.}{fig:originalmodel}
 
-\subsubsection{Representative Simulation Results}
-Python evaluates \Eref{eq:exactstep} on a 0.005 s grid. \Fref{fig:nominal} shows altitude and the corresponding command. The \RepoLink{matlab}{MATLAB folder} contains independent verification and a Simulink model-building script; those scripts are supplied for execution in MATLAB.
-\fig{nominal_response}{.76}{Nominal 5 m step prediction, with the 2\% altitude band and actuator command.}{fig:nominal}
-The simulated peak is 6.25402 m at 22.405 s, agreeing with \Tref{tab:design}. The final reference-band entry is $T_{s,2\%}=54.89$ s. Command limits are inactive: $u(0^+)=2.5+0.01432(0.93)(5)=2.56659$ V and $u_{\min}=2.48330$ V. The nominal 60 s target is met.
-
-For aerodynamic uncertainty, $b$ varies while $k_T$ remains fixed; $\tau=1/b$ and $A=k_T/b$ therefore vary together. \Tref{tab:aero} and \Fref{fig:aero} show that drag uncertainty alone satisfies the 30\% limit and proposed 75 s target.
-\begin{table}[H]\centering\small
-\caption{Predicted performance under aerodynamic uncertainty.}\label{tab:aero}
-\begin{tabular}{lrrr}\toprule\thead
-Drag & Peak [m] & Overshoot [\%] & $T_{s,2\%}$ [s]\\\midrule
-$0.9b_0$ & 6.473 & 29.45 & 70.80\\
-$b_0$ & 6.254 & 25.08 & 54.89\\
-$1.1b_0$ & 6.058 & 21.15 & 54.59\\\bottomrule
-\end{tabular}\end{table}
+\subsubsection{Comparison with the Supplied Simulation}
+The supplied scope starts at zero altitude with a 2.5 m reference, changing to 5 m at about 2.5 s. Python reproduces that same reference sequence in \Fref{fig:simcomparison}; it is not the isolated 0-to-5 m design step. The altitude RMSE against that prediction is approximately 0.0115 m.
+\plot{simulink_altitude_comparison}{.92}{Supplied Simulink altitude, replotted and compared with Python for the same reference sequence.}{fig:simcomparison}
+The supplied curve peaks at $\approx6.226$ m (24.51\% above 5 m); the matched model predicts 6.231 m and maximum command 2.56441 V. For the isolated 5 m step, $u(0^+)=2.5+0.01432(0.93)(5)=2.56659$ V. Full settings and nominal results are in \Aref{app:simulink}.
 \page
-
 \subsubsection{Controller Hardware Implementation}\label{sec:hardware}
-The controller uses a difference amplifier, a non-inverting amplifier and a biased output stage. The labelled circuit is in \Fref{fig:circuit}; the final Veroboard photograph is in \Fref{fig:board}. The supplied circuit files establish the design values in \Tref{tab:components}; the photograph alone cannot verify the underside wiring.
+\Fref{fig:circuit} shows the revised KiCad controller with its bias and DAQ connections. The physical three-stage circuit was connected in this configuration during the controller test. Capacitors and unused offset-pin graphics are omitted from the drawing. The board photograph remains in \Aref{app:photos}.
+\repfig{hardware/kicad}{kicad_controller.pdf}{.94}{Three-stage controller with bias and DAQ connections. Editable source: \RepoLink{hardware/kicad}{KiCad folder}.}{fig:circuit}
 \begin{table}[H]\centering\small
-\caption{Documented circuit components and nominal stage functions.}\label{tab:components}
-\begin{tabularx}{\linewidth}{p{20mm}p{48mm}X}\toprule\thead
+\caption{Controller component values and stage calculations.}\label{tab:components}
+\begin{tabularx}{\linewidth}{p{15mm}p{58mm}X}\toprule\thead
 Stage & Values & Function\\\midrule
-U1 & $R_1=R_3=100$ k$\Omega$; $R_2=R_4=1$ k$\Omega$ & $V_1=0.01(r_v-y_v)$; reference on $+$, sensor on $-$.\\
-U2 & $R_5=4.7$ k$\Omega$; $R_6=10$ k$\Omega$ & $V_2=(1+R_5/R_6)V_1=1.47V_1$.\\
-U3 & $R_7$--$R_{10}=100$ k$\Omega$ & Positive proportional correction plus adjustable 2.5 V bias.\\
-Bias & $R_{11}=3.9$ k$\Omega$ to ground; $R_{12}=1.2$ k$\Omega$ across P1; $R_{13}=22$ k$\Omega$ to $-15$ V; P1 = 10 k$\Omega$ & Loaded wiper feeds $R_9$; trim at equal reference and sensor inputs.\\
-Supply & Three 741-type stages, $\pm15$ V; six 100 nF capacitors in design & Common DAQ ground; one capacitor from each rail to ground at each op-amp.\\\bottomrule
+U1 & $R_1=R_3=100$ k$\Omega$; $R_2=R_4=1$ k$\Omega$ & $V_1=0.01(r_v-y_v)$.\\
+U2 & $R_5=4.7$ k$\Omega$; $R_6=10$ k$\Omega$ & $V_2=1.47V_1$.\\
+U3 & $R_7$--$R_{10}=100$ k$\Omega$ & Loaded gain $g_3=0.974280$.\\
+Bias & $R_{11}=3.9$ k$\Omega$, $R_{12}=1.2$ k$\Omega$, $R_{13}=22$ k$\Omega$, P1 = 10 k$\Omega$ & $R_{11}$ to ground; $R_{13}$ to $-15$ V.\\\bottomrule
 \end{tabularx}\end{table}
-The unloaded product $0.01(1.47)=0.0147$ overestimates gain. At the calibrated setting $W=0.783081$, the bias network has $V_{\rm th}=-2.635575$ V and $R_{\rm th}=5.423001$ k$\Omega$. Thus
+All three LM741 stages use pin 7 for $+15$ V and pin 4 for $-15$ V, with common DAQ ground. Loading of the unbuffered bias network must be included:
 \begin{align}
 u_0&=-\frac{100}{100+5.423001}(-2.635575)=2.500000\unit{V},\\
 K_{p,\rm circuit}&=0.01(1.47)\frac{1+100/(100+5.423001)}2=0.0143219.
 \end{align}
-This agrees with the simulation gain to 0.014\%. \Aref{app:circuit} gives the complete loading derivation, rail connections and DAQ mapping.
-
-Independent resistor variation also changes the reference/feedback ratio. Let $a_f=R_4/R_3$, $a_r=(1+a_f)R_2/(R_1+R_2)$, $g_2=1+R_5/R_6$ and $g_3=(1+R_{10}/(R_9+R_{\rm th}))R_8/(R_7+R_8)$. After hover recalibration,
-\begin{equation}\label{eq:ratio}
-K_f=a_fg_2g_3,\qquad y_\infty/x_\infty=a_r/a_f.
-\end{equation}
-The 2,048 loop-resistor/drag corners yield up to 48.79\% tracking error and 38.95\% overshoot (\Fref{fig:components}). Holding the bias network nominal makes this an optimistic subset, yet it already disproves full component robustness. Joint scalar uncertainty ($0.9b_0$, $1.1K_p$) gives 31.42\% overshoot. Calculations and practical corrections follow in \Aref{app:calculations} and \Sref{sec:evaluation}.
+Full loading and interface calculations are in \Aref{app:circuit}; test adjustment is in \Sref{sec:tests}.
 \page
-
 \section{Controller Tests}\label{sec:tests}
-\subsection{Test Procedure}
-The documented DAQ mapping is DAC-1 for reference, DAC-0 for sensor feedback, ADC-1 for command and ADC-2 for sensor monitoring. Equal reference and sensor inputs are used to trim the zero-error command to 2.500 V. The retained test display then shows an altitude response from near zero to a reference of 5.033 m. The display, including its student identifier and numerical readouts, is preserved in \Aref{app:demo}.
+\subsection{Connected Test Setup and Adjustment}
+The complete physical circuit was connected as in \Fref{fig:circuit}: DAC-1 for reference, DAC-0 for sensor feedback, ADC-1 for command and ADC-2 for sensor monitoring. The common-ground $\pm15$ V supply powered all three stages. The physical controller operated in closed loop with the simulated plant.
 
-\subsection{Experimental Results}
-At 86.10 s, the recorded reference is 5.033 m and height is 4.897 m. The display reports 0.137 m tracking error, 2.498 V command and 4.553 V sensor output. The computed error $5.033-4.897=0.136$ m differs from the tracking readout by only 0.001 m. The sensor check $4.553/4.896=0.92994$ V/m agrees with Session 1.
+The physical potentiometer was adjusted until the input was approximately 2.565 V to improve setpoint tracking and minimise overshoot. Its exact measurement instant was not logged. The value is close to the model's initial 5 m step command, 2.56659 V, and the reconstructed Simulink maximum, 2.56441 V. It does not replace the nominal 2.500 V zero-error hover term; \Aref{app:adjustment} gives the full calculation.
 
-The blue response in \Fref{fig:hardware} is digitised using the screenshot axes, with resolution 0.148 s/pixel and 0.0417 m/pixel. Its approximate peak is 6.229 m at 22.02 s. The curve is an estimate from image evidence.
-\fig{hardware_comparison}{.64}{Retained experimental altitude trace compared with the nominal prediction for the same 5.033 m reference.}{fig:hardware}
-The calculated experimental metrics are
+\subsection{Experimental Results and Comparison}
+At 86.10 s the display gives reference 5.033 m, height 4.897 m and command 2.498 V. This terminal command and the reported potentiometer adjustment are separate observations (\Aref{app:demo}). \Fref{fig:hardware} replots the recorded controller response in Python.
+\plot{hardware_comparison}{.73}{Connected controller response and nominal prediction for the same 5.033 m reference.}{fig:hardware}
+The approximate peak is 6.229 m at 22.02 s. From the displayed reference and final height,
 \begin{align}
 \eta_{\rm track}&=100\left(1-\frac{|5.033-4.897|}{5.033}\right)=97.30\%,\\
-M_{p,\rm exp}&\approx100\frac{6.22917-5.033}{5.033-0}=23.77\%.
+M_{p,\rm ref}&\approx100\frac{6.22917-5.033}{5.033}=23.77\%.
 \end{align}
-This overshoot uses the commanded step. Peak uncertainty is about 0.83 percentage points per pixel. \Aref{app:calculations} also checks overshoot relative to the terminal height.
+
 \page
-
-
 \subsection{Performance Analysis}\label{sec:evaluation}
-\Tref{tab:performance} compares calculated, simulated and experimental performance. Predictions use the identified plant; measurements use the retained display.
+\Tref{tab:performance} compares model, supplied Simulink and connected-controller evidence. The Simulink startup sequence is matched separately in \Fref{fig:simcomparison}; image-derived values are approximate.
 \begin{table}[H]\centering\small
-\caption{Comparison of calculated, simulated and experimental performance.}\label{tab:performance}
-\begin{tabularx}{\linewidth}{p{34mm}XXX}\toprule\thead
-Metric & Calculated & Simulation & Experiment\\\midrule
-Reference & 5.000 m & 5.000 m & 5.033 m\\
-Peak altitude & 6.25402 m & 6.25402 m & $\approx6.229$ m\\
-Peak time & 22.40597 s & 22.405 s & $\approx22.020$ s\\
-Overshoot about reference & 25.0804\% & 25.0804\% & $\approx23.77\%$\\
-Tracking accuracy & 100\% ideal & $\to100\%$ & 97.30\% displayed\\
-2\% reference settling & 64.81 s envelope & 54.89 s & Not established\\\bottomrule
+\caption{Model, supplied Simulink and connected-controller comparison.}\label{tab:performance}
+\begin{tabularx}{\linewidth}{p{36mm}XXX}\toprule\thead
+Metric & Nominal calculation / Python & Supplied Simulink & Connected circuit\\\midrule
+Reference & 0 to 5 m & 2.5 to 5 m & Near 0 to 5.033 m\\
+Peak altitude & 6.25402 m & $\approx6.226$ m & $\approx6.229$ m\\
+Peak clock time & 22.405 s & $\approx24.0$ s & $\approx22.02$ s\\
+Peak above final reference & 25.0804\% & $\approx24.51\%$ & $\approx23.77\%$\\
+Terminal tracking & 100\% ideal & $\approx99.98\%$ & 97.30\%\\
+2\% band entry & 54.89 s & $\approx56.05$ s on source clock & Not established\\\bottomrule
 \end{tabularx}\end{table}
-The terminal height lies inside the 8\% reference band (4.63036--5.43564 m) and outside the 2\% band (4.93234--5.13366 m). Overshoot about terminal height is 27.20\%; exact experimental settling remains unconfirmed.
-
-\Tref{tab:evaluation} summarises the four official laboratory criteria.
+The physical terminal height lies in the 8\% reference band (4.63036--5.43564 m), outside the 2\% band (4.93234--5.13366 m). Overshoot normalised to terminal height is 27.20\%; exact physical settling remains unconfirmed. The Simulink clock includes a reference change at 2.5 s and initial motion from zero.
 \begin{table}[H]\centering\small
 \caption{Evaluation against the laboratory requirements.}\label{tab:evaluation}
-\begin{tabularx}{\linewidth}{p{30mm}XX}\toprule\thead
+\begin{tabularx}{\linewidth}{p{29mm}XX}\toprule\thead
 Criterion & Evidence & Evaluation\\\midrule
 Tracking $>92\%$ & 97.30\%; error 0.136 m. & Pass: retained nominal test.\\
-Overshoot $<30\%$ & Model 25.08\%; experiment 23.77\% about reference. & Pass: nominal responses.\\
+Overshoot $<30\%$ & Python 25.08\%; experiment 23.77\%. & Pass: nominal responses.\\
 Aerodynamics $\pm10\%$ & Overshoot 21.15--29.45\%. & Pass: drag-only predictions.\\
 Components $\pm10\%$ & Corner error 48.79\%; overshoot 38.95\%. & Fail: independent tolerances.\\\bottomrule
 \end{tabularx}\end{table}
-
 \subsection{Discussion}
-The measured peak agrees closely with the model. Hover bias or unequal signal scaling can cause the final offset. A +2 mV bias predicts +0.150 m displacement (\Fref{fig:disturbance}), illustrating this sensitivity without identifying the measured error's cause.
-
-Joint drag/gain uncertainty gives 31.42\% overshoot; resistor mismatch alters the final altitude ratio. Nominal success therefore does not establish full tolerance robustness. \Aref{app:calculations} derives the effects and proposed corrections.
+Nominal peaks agree closely, but bias and unequal reference/feedback scaling can change tracking. With recalibrated hover and stage coefficients from \Aref{app:circuit},
+\begin{equation}\label{eq:ratio}
+K_f=a_fg_2g_3,\qquad y_\infty/x_\infty=a_r/a_f.
+\end{equation}
+The 2,048 loop-resistor/drag corners fail robustness; joint scalar drag/gain variation also gives 31.42\% overshoot. A +2 mV input bias predicts +0.150 m offset. Detailed uncertainty and correction calculations are in \Aref{app:calculations}; these are predictions, not additional physical trials.
 \page
 
 \section{Conclusion and Recommendations}\label{sec:conclusion}

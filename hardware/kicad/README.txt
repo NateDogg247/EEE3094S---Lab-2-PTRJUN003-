@@ -1,4 +1,3 @@
-The current editable project is Kitticopter_3OpAmp_Controller.kicad_pro.
-Open Kitticopter_3OpAmp_Controller.kicad_sch directly if preferred.
-See README.md for component values, channel mappings and validation.
-The .sch/.pro files are older legacy sources; use the native .kicad_sch project.
+Open Kitticopter_3OpAmp_Controller.kicad_pro in KiCad 7 or newer.
+The native .kicad_sch is self-contained and includes the revised controller without capacitors or unused offset-pin graphics.
+See README.md for values, channel mappings and connectivity verification.

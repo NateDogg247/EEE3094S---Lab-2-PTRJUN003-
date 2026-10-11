@@ -12,7 +12,7 @@
     "U3.5",
     "U3.8"
   ],
-  "components": 25,
+  "components": 19,
   "nominal_ideal_DC": {
     "P1_fraction_from_pin_1": 0.7830805940823569,
     "bias_open_circuit_V": -2.6355750361984382,

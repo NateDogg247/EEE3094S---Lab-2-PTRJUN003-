@@ -142,5 +142,25 @@
     "entry_8percent_band_s": 32.66009852216749
   },
   "input_bias_limit_for_5m_8percent_v": 0.005327040000000001,
-  "illustrative_bias_error_m": 0.15017720910674595
+  "illustrative_bias_error_m": 0.15017720910674595,
+  "supplied_simulink_scope": {
+    "reference_before_m": 2.5,
+    "reference_after_m": 5.0,
+    "reference_change_s": 2.5,
+    "scope_peak_m": 6.225663716814159,
+    "scope_peak_clock_s": 24.02001668056714,
+    "scope_peak_above_final_reference_percent": 24.51327433628318,
+    "scope_terminal_m": 4.999115044247787,
+    "scope_terminal_tracking_percent": 99.98230088495575,
+    "scope_settling_2percent_clock_s": 56.04670558798999,
+    "scope_altitude_RMSE_against_matched_python_m": 0.011541978610215687,
+    "pixel_time_s": 0.08340283569641367,
+    "pixel_height_m": 0.012389380530973451,
+    "matched_python_peak_m": 6.231187075435807,
+    "matched_python_peak_clock_s": 23.755,
+    "matched_python_maximum_command_V": 2.564405386938128,
+    "reported_potentiometer_input_V": 2.565,
+    "reported_adjustment_provenance": "User recollection of the connected physical controller test; not a logged time series",
+    "extraction": "Approximate colour digitisation; x=40..1239 is 0..100 s, y=596 is 0 m, y=31 is 7 m"
+  }
 }

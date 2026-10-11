@@ -24,6 +24,9 @@ folders = [
     "matlab/design",
     "matlab/validation",
     "matlab/simulink",
+    "matlab/plots",
+    "hardware/kicad",
+    "results/matlab",
 ]
 for folder in folders:
     p = ROOT / folder

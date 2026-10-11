@@ -1,0 +1,28 @@
+\subsection{Reported Potentiometer Adjustment and Command Calculations}\label{app:adjustment}
+The complete physical three-op-amp controller was connected during the controller test. The student reported adjusting the physical potentiometer until the input was approximately 2.565 V, with the aim of tracking the setpoint with minimal overshoot. No time series or exact measurement instant accompanies that recollection. The retained terminal display independently records a 2.498 V command at 86.10 s.
+
+For the isolated 0-to-5 m reference test, starting at zero altitude,
+\begin{align}
+r_v(0^+)&=k_sx=0.93(5)=4.650\unit{V},\\
+e_v(0^+)&=r_v-y_v=4.650-0=4.650\unit{V},\\
+\delta u(0^+)&=K_pe_v=0.01432(4.650)=0.066588\unit{V},\\
+u(0^+)&=u_h+\delta u=2.500000+0.066588=2.566588\unit{V},\\
+u_{\rm reported}-u(0^+)&=2.565-2.566588=-0.001588\unit{V}.
+\end{align}
+The difference in voltage magnitude is approximately 1.59 mV. This comparison does not establish that the reported observation was measured at the same instant or node as the model command.
+
+For the supplied Simulink startup sequence, define the unit closed-loop response
+\begin{equation}
+h(t)=1-e^{-\sigma t}\left(\cos\omega_dt+\frac{\sigma}{\omega_d}\sin\omega_dt\right),\quad h(t)=0\text{ for }t<0.
+\end{equation}
+Superposition gives $y(t)=2.5h(t)+2.5h(t-2.5)$ for a reference of 2.5 m initially and 5 m after 2.5 s. Consequently,
+\begin{equation}
+u(2.5^+)=2.5+0.01432(0.93)\{5-2.5h(2.5)\}=2.564405\unit{V}.
+\end{equation}
+This maximum differs from the reported 2.565 V by approximately 0.595 mV. The original scope's voltage resolution is approximately 0.0124 V/pixel, so it cannot verify either millivolt difference.
+
+The command during a reference error must be distinguished from the zero-error hover bias. If 2.565 V were instead held as a constant zero-error command, its 65 mV excess would predict
+\begin{equation}
+\delta y=\frac{2.565-2.500}{K_pk_s}=\frac{0.065}{0.01432(0.93)}=4.88076\unit{m}.
+\end{equation}
+That is not a negligible hover-bias change. Therefore the reported adjustment is documented as a practical test observation, rather than silently replacing the nominal 2.500 V hover term or the calculated controller gain. Changing the bias alone does not change the damping ratio or remove the proportional controller's settling limitation.

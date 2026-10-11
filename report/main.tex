@@ -35,7 +35,9 @@
 \makeatother
 \counterwithin{figure}{section}\counterwithin{table}{section}
 \newcommand{\HRule}{\textcolor{AngelBlue}{\rule{\linewidth}{0.5mm}}}
-\newcommand{\fig}[4]{\begin{figure}[H]\centering\includegraphics[width=#2\linewidth]{#1}\caption{#3}\label{#4}\end{figure}}
+\newcommand{\fig}[4]{\begin{figure}[H]\centering\href{\RepoRoot/tree/\RepoBranch/report/figures}{\includegraphics[width=#2\linewidth]{#1}}\caption{#3}\label{#4}\end{figure}}
+\newcommand{\plot}[4]{\begin{figure}[H]\centering\href{\RepoRoot/tree/\RepoBranch/analysis/modules}{\includegraphics[width=#2\linewidth]{#1}}\caption{#3 Code: \RepoLink{analysis/modules}{Python}; \RepoLink{matlab/plots}{MATLAB}. Data: \RepoLink{results}{results}.}\label{#4}\end{figure}}
+\newcommand{\repfig}[5]{\begin{figure}[H]\centering\href{\RepoRoot/tree/\RepoBranch/#1}{\includegraphics[width=#3\linewidth]{#2}}\caption{#4}\label{#5}\end{figure}}
 \newcommand{\page}{\clearpage}
 \newcommand{\unit}[1]{\,\mathrm{#1}}
 \newcommand{\Fref}[1]{\hyperref[#1]{Figure~\ref*{#1}}}

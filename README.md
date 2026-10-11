@@ -6,7 +6,7 @@ Junaid Allan Pieters — Proportional Control of the Kitticopter, University of 
 - [Worked calculations PDF](calculations/PTRJUN003_Lab2_Calculations.pdf): identification, root locus, response, circuit loading, robustness and experimental metrics.
 - [Code guide](CODE_GUIDE.md): module responsibilities and instructions.
 
-The report follows the supplied previous-year example with numbered chapter headings, a Prepared by / Prepared for cover, a separate conclusion page and a calculation/simulation/experiment comparison. It retains the template's Computer Modern font, 12 pt text, one-inch margins and spacing, with angel-blue accents and the UCT logo. Original photos and screenshots are in the appendices. Internal references and GitHub folder/file links are clickable.
+The report follows the supplied previous-year example with numbered chapter headings, a Prepared by / Prepared for cover, a separate conclusion page and a calculation/simulation/experiment comparison. It retains the template's Computer Modern font, 12 pt text, one-inch margins and spacing, with angel-blue accents and the UCT logo. Physical photos and the required controller-demonstration screenshot are in the appendices. The supplied Simulink diagram and revised KiCad schematic are in the main report; all numerical plots are rendered by Python with MATLAB counterparts. Click the plot itself or its caption to open the relevant GitHub folder. Internal references and GitHub folder/file links are clickable.
 
 ## Project map
 
@@ -32,7 +32,7 @@ python -m pip install -r requirements.txt
 python analysis/analyse.py
 ```
 
-The launcher runs identification, nominal controller analysis, robustness, hardware digitisation and disturbance prediction in order. It writes results and report plots.
+The launcher runs identification, nominal controller analysis, robustness, hardware digitisation, disturbance prediction and the supplied Simulink reference-sequence comparison in order. It writes results and report plots.
 
 ## Run MATLAB
 
@@ -48,7 +48,7 @@ For the detailed root locus method alone:
 root_locus_design
 ```
 
-Control System Toolbox is required. Simulink is required only for the model builder. MATLAB source is supplied but was not executed in the authoring environment; Python reproduced the saved numerical results.
+Control System Toolbox is required. Simulink is required for the model builder and native test runner. The standalone `plot_report_figures` uses analytical formulas without Control System Toolbox. MATLAB source is supplied but was not executed in the authoring environment; Python reproduced the saved numerical results.
 
 ## Build the PDFs
 
@@ -77,3 +77,9 @@ python scripts/set_repository.py https://github.com/NateDogg247/EEE3094S---Lab-2
 ```
 
 Rebuild the PDF after changing link settings. See [RUBRIC_REVIEW.md](RUBRIC_REVIEW.md) for the available evidence.
+
+## Clarified controller test
+
+The full three-op-amp circuit remained connected for the physical controller test. The physical potentiometer was adjusted until the input was approximately 2.565 V. This recalled observation is recorded separately from the nominal 2.500 V zero-error hover condition and the terminal 2.498 V display. See `data/session2/test_conditions.json` and the report adjustment calculation.
+
+The current KiCad drawing contains no capacitors, no unused pin-1/pin-5 graphics or crosses, and no opening title/subtitle. Open `hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_pro`.

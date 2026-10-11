@@ -27,7 +27,9 @@
 \numberwithin{equation}{section}
 \counterwithin{figure}{section}\counterwithin{table}{section}
 \newcommand{\HRule}{\textcolor{AngelBlue}{\rule{\linewidth}{0.5mm}}}
-\newcommand{\fig}[4]{\begin{figure}[H]\centering\includegraphics[width=#2\linewidth]{#1}\caption{#3}\label{#4}\end{figure}}
+\newcommand{\fig}[4]{\begin{figure}[H]\centering\href{\RepoRoot/tree/\RepoBranch/report/figures}{\includegraphics[width=#2\linewidth]{#1}}\caption{#3}\label{#4}\end{figure}}
+\newcommand{\plot}[4]{\begin{figure}[H]\centering\href{\RepoRoot/tree/\RepoBranch/analysis/modules}{\includegraphics[width=#2\linewidth]{#1}}\caption{#3 Code: \RepoLink{analysis/modules}{Python}; \RepoLink{matlab/plots}{MATLAB}. Data: \RepoLink{results}{results}.}\label{#4}\end{figure}}
+\newcommand{\repfig}[5]{\begin{figure}[H]\centering\href{\RepoRoot/tree/\RepoBranch/#1}{\includegraphics[width=#3\linewidth]{#2}}\caption{#4}\label{#5}\end{figure}}
 \newcommand{\page}{\clearpage}
 \newcommand{\unit}[1]{\,\mathrm{#1}}
 \newcommand{\Fref}[1]{\hyperref[#1]{Figure~\ref*{#1}}}
@@ -167,7 +169,7 @@ Thus a 5 m reference tends to 7.43932 m even after hover recalibration. The type
 \page
 \subsection{Practical Gain and Ratio Correction}
 The corner distributions in \Fref{fig:components} separate dynamic overshoot from DC ratio error.
-\fig{component_robustness}{.92}{Loop-resistor corners. Dashed limits are 30\% overshoot and 8\% tracking error. The histograms show corner counts, not probabilities.}{fig:components}
+\plot{component_robustness}{.92}{Loop-resistor corners. Dashed limits are 30\% overshoot and 8\% tracking error. The histograms show corner counts, not probabilities.}{fig:components}
 Failure in this subset rejects a guarantee for all components. Bias-network and op-amp variations can add error. After matching the U1 ratios, a practical gain correction is to replace both 1 k$\Omega$ resistors with matched 680 $\Omega$ values:
 \begin{align}
 K_{p,\rm new}&=\frac{680}{100000}(1.47)(0.97427980)=0.009738901,\\
@@ -176,6 +178,9 @@ M_{p,\rm worst}&\approx23.44\%,\\
 |\delta u_b|_{\max}&=0.08(5)(0.009738901)(0.93)=3.623\unit{mV}.
 \end{align}
 This scalar check assumes matched reference and feedback ratios; it is not a guarantee for independent resistor corners. Lower gain increases damping but tightens the hover-bias allowance. The board must be recalibrated and retested after any change.
+\page
+
+\input{\ReportRoot sections/test_adjustment_calculations.tex}
 \page
 
 \subsection{Experimental Metrics and Uncertainty}
@@ -243,7 +248,7 @@ The ideal buffered result 0.0147 differs by 2.57\%, while the selected model val
 
 
 \section{Defined Disturbance Prediction}
-\fig{disturbance_prediction}{.95}{Prediction for a +2 mV command bias introduced at 70 s; the shaded band is the 8\% reference band.}{fig:disturbance}
+\plot{disturbance_prediction}{.95}{Prediction for a +2 mV command bias introduced at 70 s; the shaded band is the 8\% reference band.}{fig:disturbance}
 The nominal shift is $0.002/(0.01432\times0.93)=0.150177$ m. This simulation is a prediction for a specified disturbance, not an experimentally measured rejection test.
 \begin{thebibliography}{9}
 \bibitem{stepinfo} MathWorks, \emph{stepinfo}: \href{https://www.mathworks.com/help/control/ref/dynamicsystem.stepinfo.html}{official documentation}.

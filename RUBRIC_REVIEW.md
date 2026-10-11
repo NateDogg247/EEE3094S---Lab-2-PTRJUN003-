@@ -11,7 +11,7 @@ This checklist is separate from the report. It does not guarantee marks.
 | Model and units | Free-body diagram, voltage/metre block diagram, input and sensor mappings | Transfer-function checker acceptance record absent |
 | Logical root-locus design | Correct locus, gain bound, poles, damping, manual peak calculation | Previous-year numerical mistakes corrected |
 | Plausibility of specifications | 30 s pole target distinguished from actual brief; joint uncertainty bound | Original gain has little aerodynamic margin |
-| Sensible simulations | 5 m step, initial conditions, 0–5 V saturation, analytic/numerical agreement | MATLAB/Simulink scripts need execution in MATLAB |
+| Sensible simulations | 5 m step, initial conditions, 0–5 V saturation, supplied Simulink diagram and matched-reference scope comparison | MATLAB reproduction scripts need execution in MATLAB |
 | Component robustness | 2,048 documented loop-resistor/drag corner cases, ratio mismatch analysis | Original board does not guarantee all component corners |
 | Experimental evaluation | Display readouts, digitised peak with resolution, model comparison | Screenshot metrics approximate; raw command and position logs absent |
 | Demonstration plot and hardware | Retained screenshot, 5 m simulation, three-op-amp Veroboard photograph | Signed demonstration record absent; an awarded mark cannot be established |
@@ -19,7 +19,7 @@ This checklist is separate from the report. It does not guarantee marks.
 | Recommendations | Match ratios, reduce gain, trim loaded hover, repeat/disturbance tests | Proposed changes have not been physically tested |
 | Professional presentation | Example chapter/cover layout, template font, angel-blue accents, UCT logo, vector plots, performance comparison and equations | Exactly 14 main pages; title, contents, lists, references and appendices excluded |
 | Git folder links | Actual public repository, main-branch folder/file URLs, internal cross-references and PDF link verification | Links require the corresponding organised folders to remain in the repository |
-| Organised code and calculations | Shared parameters, task-specific Python/MATLAB modules, code guide and eleven-page calculation supplement | MATLAB was not available for execution; Python results reproduce the saved baseline |
+| Organised code and calculations | Shared parameters, task-specific Python/MATLAB modules, code guide and twelve-page calculation supplement | MATLAB was not available for execution; Python reproduces the retained results and compares the supplied Simulink scope |
 
 ## Highest-priority additions before submission
 

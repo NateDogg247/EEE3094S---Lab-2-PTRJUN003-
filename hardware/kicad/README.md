@@ -5,6 +5,10 @@ the schematic. You can also open `Kitticopter_3OpAmp_Controller.kicad_sch`
 directly. Keep `Controller.kicad_sym` and `sym-lib-table` beside the project.
 All symbols are also embedded in the schematic.
 
+The current drawing omits capacitors, the unused pin-1/pin-5 graphics and NC
+crosses, and the opening title/subtitle, as requested. The hidden offset pins
+retain their physical numbers and electrical types; no active pin is changed.
+
 The drawing follows the supplied reference's KiCad presentation: green wires,
 red US zigzag resistors and op-amp symbols, teal component labels, and physical
 pin numbers. The three LM741 symbols are mirrored so that pin 2 (inverting)
@@ -22,12 +26,15 @@ used in this controller.
 | U2 | R5 4.7k; R6 10k | V1 -> pin 3; R5 feedback; R6 to ground; V2 = 1.47 V1 |
 | U3 | R7–R10 100k | V2 -> positive divider; P1 wiper -> R9 -> pin 2; output -> ADC-1 |
 | Bias | R11 3.9k; P1 10k; R12 1.2k; R13 22k | GND -> R11 -> P1 -> R13 -> -15 V; R12 across P1 |
-| Bypass | C1–C6 100nF | One capacitor from each supply rail to ground at each IC |
 
 The bias-source loading is included in the nominal calculation. At zero error,
 adjust P1 until the command is +2.500 V. With nominal resistors and ideal
 op-amps, P1's fraction from pin 1 to the wiper is approximately 0.78308,
 Rth = 5423.00 ohms, and the overall incremental gain is 0.0143219 V/V.
+During the connected controller test, the student reported adjusting the physical
+potentiometer until the input was approximately 2.565 V. This is a test observation
+with no logged measurement time, not a revised theoretical zero-error bias.
+
 The physical potentiometer must be calibrated; this calculated fraction is
 not a measured knob position.
 
@@ -53,12 +60,12 @@ part numbers or a claim about the board's terminal ordering.
 
 ## Files and verification
 
-- `.kicad_sch`: native editable schematic; 25 components.
+- `.kicad_sch`: native editable schematic; 19 components.
 - `.kicad_pro`: project; `.kicad_sym` and `sym-lib-table`: local symbol library.
 - `Kitticopter_3OpAmp_preview.svg`: native KiCad vector export.
 - `Kitticopter_3OpAmp_preview.png`: 4200-pixel diagram for insertion in a report.
 - `Kitticopter_3OpAmp_Controller.net`: KiCad-exported XML netlist.
-- `BOM.csv`: resistor, capacitor, op-amp and logical connector list.
+- `BOM.csv`: resistor, potentiometer, op-amp and logical connector list.
 - `verify_netlist.py` and `validation.json`: connectivity and ideal DC checks.
 
 KiCad 7.0.11 successfully parsed the schematic and exported SVG and XML.

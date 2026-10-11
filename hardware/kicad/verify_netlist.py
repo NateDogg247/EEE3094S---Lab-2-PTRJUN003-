@@ -12,9 +12,9 @@ path=Path(sys.argv[1]) if len(sys.argv)>1 else Path(__file__).with_name('Kittico
 root=ET.parse(path).getroot()
 actual={n.attrib['name'].lstrip('/'): {x.attrib['ref']+'.'+x.attrib['pin'] for x in n.findall('node')} for n in root.findall('./nets/net')}
 expected={
-    '+15V':{'C1.1','C3.1','C5.1','J2.1','U1.7','U2.7','U3.7'},
-    '-15V':{'C2.1','C4.1','C6.1','J2.3','R13.2','U1.4','U2.4','U3.4'},
-    'GND':{'C1.2','C2.2','C3.2','C4.2','C5.2','C6.2','J1.5','J2.2','R11.1','R2.2','R6.2','R8.2'},
+    '+15V':{'J2.1','U1.7','U2.7','U3.7'},
+    '-15V':{'J2.3','R13.2','U1.4','U2.4','U3.4'},
+    'GND':{'J1.5','J2.2','R11.1','R2.2','R6.2','R8.2'},
     'DAC-0':{'J1.2','J1.4','R3.1'}, 'DAC-1':{'J1.1','R1.1'},
     'ADC-1':{'J1.3','R10.2','U3.6'}, 'BIAS':{'P1.2','R9.1'},
     'BIAS_A':{'P1.1','R11.2','R12.1'}, 'BIAS_B':{'P1.3','R12.2','R13.1'},

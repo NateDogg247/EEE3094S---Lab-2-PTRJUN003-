@@ -21,6 +21,7 @@ Identification uses a 2.5 to 5.0 V actuator step, increment 2.5 V. The nominal c
 | [controller.py](analysis/modules/controller.py) | Characteristic equation, poles, root locus, overshoot, peak time, settling and command |
 | [robustness.py](analysis/modules/robustness.py) | Aerodynamic uncertainty, circuit Thevenin calculation, scalar corners, 2,048 resistor/drag corners and gain correction |
 | [hardware.py](analysis/modules/hardware.py) | Digitised response, tracking, peak, overshoot and pixel resolution |
+| [simulink_evidence.py](analysis/modules/simulink_evidence.py) | Replots the supplied scope and reconstructs its actual 2.5-to-5 m reference sequence |
 | [disturbance.py](analysis/modules/disturbance.py) | Defined +2 mV bias prediction and tracking allowance |
 | [plot_style.py](analysis/modules/plot_style.py) | Figure styling and PDF/PNG export |
 
@@ -43,6 +44,8 @@ The launcher calls all modules; they do not need to be run individually. CSV/JSO
 | [identification/identify_session1.m](matlab/identification/identify_session1.m) | Finite-difference identification and sensor fit |
 | [validation/verify_nominal_controller.m](matlab/validation/verify_nominal_controller.m) | Independent original controller check |
 | [simulink/create_simulink_model.m](matlab/simulink/create_simulink_model.m) | Saves the sensor-scaled, hover-biased nominal model |
+| [plots/plot_report_figures.m](matlab/plots/plot_report_figures.m) | MATLAB counterparts of every numerical report figure, with PDF/PNG exports |
+| [simulink/run_simulink_tests.m](matlab/simulink/run_simulink_tests.m) | Executes both reference sequences and exports native solver logs |
 | [config/lab_parameters.m](matlab/config/lab_parameters.m) | Reads shared parameters |
 
 On Windows:
@@ -66,7 +69,7 @@ The supplement shows formulas, substitutions, units and interpretation for ident
 
 `main.tex` is the root entry point. Files in `report/sections` separate the body, references, appendices and circuit drawing. `report/main.tex` defines the appearance, and `report/repository.tex` defines GitHub destinations.
 
-The report has 14 main pages. Title, contents, lists, references and appendices are excluded. Photos and original screenshots remain in the appendices.
+The report has 14 main pages. Title, contents, lists, references and appendices are excluded. Physical photos and the required controller-tracking screenshot remain in the appendices. The main report includes the supplied Simulink architecture, its Python-replotted results and the revised KiCad schematic. Numerical figures and captions link their GitHub source folders.
 
 The modular Python pipeline reproduces the saved metrics exactly. The PDF check verifies page count, internal destinations, GitHub URI destinations and matching project paths. Run the full build with:
 
@@ -75,3 +78,7 @@ bash scripts/build.sh
 ```
 
 Nominal settling remains 54.89 s, and independent component tolerance is not fully met. No repeated experiments or unexecuted MATLAB outputs are presented as measured evidence.
+
+## Reported potentiometer adjustment
+
+`data/session2/test_conditions.json` preserves the student's connected-controller setup and approximately 2.565 V input observation. `report/sections/test_adjustment_calculations.tex` is shared by the report and calculation supplement. It distinguishes that observation from a zero-error hover bias, and compares it with the predicted initial command and reconstructed scope sequence.

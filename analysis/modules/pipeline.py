@@ -3,7 +3,7 @@
 import json
 from .parameters import LabParameters
 from .plot_style import configure
-from . import identification, controller, robustness, hardware, disturbance
+from . import identification, controller, robustness, hardware, disturbance, simulink_evidence
 
 
 def run_all(project_root):
@@ -11,7 +11,7 @@ def run_all(project_root):
     (project_root / "results").mkdir(exist_ok=True)
     configure()
     metrics = {}
-    stages = [identification, controller, robustness, hardware, disturbance]
+    stages = [identification, controller, robustness, hardware, disturbance, simulink_evidence]
     for stage in stages:
         print("Running " + stage.__name__.split(".")[-1] + "...")
         metrics.update(stage.run(project_root, parameters))

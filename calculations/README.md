@@ -12,8 +12,9 @@
 | 6 | Response, peak, overshoot, settling and command headroom | `analysis/modules/controller.py` |
 | 7 | Scalar gain bound and independent resistor-ratio tolerance | `analysis/modules/robustness.py` |
 | 8 | Matched-resistor correction and bias allowance | `analysis/modules/robustness.py` |
-| 9 | Screenshot calibration, tracking, overshoot and uncertainty | `analysis/modules/hardware.py` |
-| 10 | Thevenin matrix, hover calibration and loaded circuit gain | `analysis/modules/robustness.py` |
-| 11 | Defined actuator-bias prediction | `analysis/modules/disturbance.py` |
+| 9 | Reported 2.565 V adjustment, initial command and matched-reference Simulink calculations | `report/sections/test_adjustment_calculations.tex`, `analysis/modules/simulink_evidence.py` |
+| 10 | Screenshot calibration, tracking, overshoot and uncertainty | `analysis/modules/hardware.py` |
+| 11 | Thevenin matrix, hover calibration and loaded circuit gain | `analysis/modules/robustness.py` |
+| 12 | Defined actuator-bias prediction and references | `analysis/modules/disturbance.py` |
 
 The model and root-locus derivations are shared LaTeX fragments under `report/sections`, included by both PDFs. These are retained data and defined model predictions. Metrics are in `results/metrics.json`; processed signals and tolerance corners are saved as CSVs.

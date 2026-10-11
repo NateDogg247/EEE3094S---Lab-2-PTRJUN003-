@@ -1,0 +1,19 @@
+{
+  "confirmation_date": "2026-10-11",
+  "provenance": "Student clarification in this conversation",
+  "test_type": "Physical analogue controller connected to the simulated altitude plant",
+  "full_three_op_amp_circuit_connected": true,
+  "channel_map": {"DAC-1":"Reference", "DAC-0":"Sensor feedback", "ADC-1":"Controller command", "ADC-2":"Sensor monitor"},
+  "reported_adjustment": {
+    "method": "Adjusted the potentiometer in the physical circuit",
+    "reported_input_V": 2.565,
+    "purpose": "Track the desired setpoint with minimal overshoot",
+    "exact_measurement_time": null,
+    "exact_measurement_terminal": null,
+    "raw_measurement_log_supplied": false
+  },
+  "nominal_model_hover_V": 2.5,
+  "terminal_display_command_V": 2.498,
+  "terminal_display_time_s": 86.1,
+  "identification_test_connection": "The new full-circuit confirmation applies to the controller test; it does not change the Session 1 CSV interpretation."
+}

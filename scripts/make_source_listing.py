@@ -3,14 +3,14 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-EXTENSIONS = {".py", ".m", ".sh", ".tex", ".asc", ".sch", ".pro"}
+EXTENSIONS = {".py", ".m", ".sh", ".tex", ".asc", ".sch", ".pro", ".kicad_sch", ".kicad_sym", ".kicad_pro"}
 
 
 def build():
     files = sorted(
         p
         for p in ROOT.rglob("*")
-        if p.is_file() and (p.suffix in EXTENSIONS or p.name == "lab_parameters.json")
+        if p.is_file() and (p.suffix in EXTENSIONS or p.name in {"lab_parameters.json", "test_conditions.json", "sym-lib-table"})
     )
     text = [
         "COMPLETE ORGANISED SOURCE CODE: PTRJUN003 LAB 2",
