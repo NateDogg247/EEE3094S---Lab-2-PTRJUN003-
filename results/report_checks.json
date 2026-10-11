@@ -1,0 +1,30 @@
+{
+  "main_pages": 14,
+  "excluded_title_pages": 1,
+  "front_matter_pages": 4,
+  "reference_pages": 1,
+  "appendix_pages": 16,
+  "total_pages": 36,
+  "internal_links": 200,
+  "github_links": 25,
+  "github_urls": [
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/blob/main/CODE_GUIDE.md",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/blob/main/config/lab_parameters.json",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/tree/main/analysis",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/tree/main/analysis/modules",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/tree/main/calculations",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/tree/main/config",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/tree/main/data/session1",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/tree/main/data/session2",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/tree/main/hardware",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/tree/main/matlab",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/tree/main/matlab/design",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/tree/main/matlab/identification",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/tree/main/matlab/simulink",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/tree/main/matlab/validation",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/tree/main/report",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/tree/main/results",
+    "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/tree/main/scripts"
+  ]
+}

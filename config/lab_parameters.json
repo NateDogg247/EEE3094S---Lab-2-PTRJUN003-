@@ -1,0 +1,17 @@
+{
+  "A": 14.2748,
+  "tau_s": 8.1,
+  "sensor_gain_V_per_m": 0.93,
+  "controller_gain": 0.01432,
+  "hover_command_V": 2.5,
+  "identification_step_V": 2.5,
+  "reference_step_m": 5.0,
+  "actuator_min_V": 0.0,
+  "actuator_max_V": 5.0,
+  "simulation_end_s": 160.0,
+  "simulation_interval_s": 0.005,
+  "overshoot_limit_fraction": 0.3,
+  "tracking_error_limit_fraction": 0.08,
+  "settling_band_fraction": 0.02,
+  "settling_design_target_s": 30.0
+}

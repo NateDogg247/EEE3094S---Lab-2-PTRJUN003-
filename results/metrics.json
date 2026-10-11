@@ -1,0 +1,146 @@
+{
+  "retained_rows": 1603,
+  "discarded_rows": 31,
+  "sample_interval_s": 0.1,
+  "v_infinity_mps": 35.68747524752474,
+  "A_from_tail": 14.274990099009894,
+  "v_63p2_mps": 22.554484356435633,
+  "t_63p2_absolute_s": 24.015302722772464,
+  "tau_63p2_from_15p9_s": 8.115302722772464,
+  "fit_v_infinity": 35.68747058985765,
+  "fit_tau": 8.103933617889133,
+  "fit_step_time": 15.915837830071961,
+  "ks_fit": 0.9300025856083823,
+  "calibration_points": 22,
+  "velocity_rmse_fit_window": 0.005331540389571799,
+  "velocity_rmse_holdout": 0.004359259886569146,
+  "position_rmse_holdout": 1.685693361294191,
+  "nominal_A": 14.2748,
+  "nominal_tau": 8.1,
+  "nominal_ks": 0.93,
+  "nominal_kp": 0.01432,
+  "b": 0.1234567901234568,
+  "kT": 1.762320987654321,
+  "simulation_nominal": {
+    "overshoot_percent": 25.080374648985497,
+    "peak_m": 6.254018732449275,
+    "peak_time_s": 22.405,
+    "settling_2percent_s": 54.89,
+    "terminal_error_m": -0.0002805043483258274
+  },
+  "wn": 0.15319884459481145,
+  "zeta": 0.4029298995367164,
+  "wd": 0.14021230769190118,
+  "sigma": 0.0617283950617284,
+  "overshoot_analytic_percent": 25.08037492548656,
+  "peak_time_analytic_s": 22.405969242679078,
+  "settling_envelope_s": 64.80975180827775,
+  "zeta_min_30percent": 0.3578571305033167,
+  "kp_max_nominal": 0.018154431708315374,
+  "kp_max_joint_scalar10": 0.01336826334885041,
+  "breakaway_gain": 0.002324887856430371,
+  "aerodynamic_corners": [
+    {
+      "b_factor": 0.9,
+      "overshoot_percent": 29.450173259019934,
+      "peak_m": 6.472508662950997,
+      "peak_time_s": 22.005,
+      "settling_2percent_s": 70.8,
+      "terminal_error_m": -0.0006559509343002645
+    },
+    {
+      "b_factor": 1,
+      "overshoot_percent": 25.080374648985497,
+      "peak_m": 6.254018732449275,
+      "peak_time_s": 22.405,
+      "settling_2percent_s": 54.89,
+      "terminal_error_m": -0.0002805043483258274
+    },
+    {
+      "b_factor": 1.1,
+      "overshoot_percent": 21.154165310555975,
+      "peak_m": 6.057708265527799,
+      "peak_time_s": 22.875,
+      "settling_2percent_s": 54.585,
+      "terminal_error_m": -9.476511588779601e-05
+    }
+  ],
+  "scalar_corners": [
+    {
+      "b_factor": 0.9,
+      "kp_factor": 0.9,
+      "overshoot_percent": 27.264750069607864,
+      "peak_m": 6.363237503480393,
+      "peak_time_s": 23.39,
+      "settling_2percent_s": 71.325,
+      "terminal_error_m": -0.00046655736666156855
+    },
+    {
+      "b_factor": 0.9,
+      "kp_factor": 1.1,
+      "overshoot_percent": 31.422704102213928,
+      "peak_m": 6.571135205110696,
+      "peak_time_s": 20.84,
+      "settling_2percent_s": 68.575,
+      "terminal_error_m": 0.00015147099521328755
+    },
+    {
+      "b_factor": 1.1,
+      "kp_factor": 0.9,
+      "overshoot_percent": 19.012777338165314,
+      "peak_m": 5.950638866908266,
+      "peak_time_s": 24.45,
+      "settling_2percent_s": 57.015,
+      "terminal_error_m": 3.6734366310575695e-05
+    },
+    {
+      "b_factor": 1.1,
+      "kp_factor": 1.1,
+      "overshoot_percent": 23.11111127869058,
+      "peak_m": 6.155555563934529,
+      "peak_time_s": 21.575,
+      "settling_2percent_s": 52.255,
+      "terminal_error_m": -6.7866648602255e-05
+    }
+  ],
+  "bias_network": {
+    "w_fraction": 0.7830805940823123,
+    "open_wiper_v": -2.635575036198412,
+    "thevenin_ohm": 5423.00144793774,
+    "loaded_hover_v": 2.49999999999997,
+    "loaded_kp": 0.014321913054125798
+  },
+  "resistor_corners": {
+    "number": 2048,
+    "kp_min": 0.009072485091209679,
+    "kp_max": 0.022784326930534275,
+    "worst_tracking_error_percent": 48.786437370411086,
+    "reference_ratio_min": 0.6721042708418721,
+    "reference_ratio_max": 1.4878643737041108,
+    "worst_overshoot_percent": 38.94607367496002,
+    "nominal_loaded_prediction": 0.014321913054125798,
+    "nominal_pot_fraction": 0.7830805940823123,
+    "nominal_pot_thevenin_ohm": 5423.00144793774
+  },
+  "recommended_kp": 0.009738900876805543,
+  "recommended_worst_scalar_overshoot_percent": 23.43713200853932,
+  "hardware_screenshot": {
+    "reference_m": 5.033,
+    "final_height_m": 4.897,
+    "displayed_tracking_m": 0.137,
+    "displayed_command_v": 2.498,
+    "displayed_sensor_v": 4.553,
+    "display_time_s": 86.1,
+    "error_from_height_m": 0.13600000000000012,
+    "tracking_accuracy_percent": 97.29783429366184,
+    "digitised_peak_m": 6.229166666666667,
+    "digitised_peak_time_s": 22.019704433497537,
+    "overshoot_relative_to_reference_percent": 23.76647460096695,
+    "pixel_height_resolution_m": 0.041666666666666664,
+    "pixel_time_resolution_s": 0.1477832512315271,
+    "final_trace_within_2percent_reference": false,
+    "entry_8percent_band_s": 32.66009852216749
+  },
+  "input_bias_limit_for_5m_8percent_v": 0.005327040000000001,
+  "illustrative_bias_error_m": 0.15017720910674595
+}

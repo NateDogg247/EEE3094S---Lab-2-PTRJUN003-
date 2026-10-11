@@ -1,0 +1,21 @@
+% Internal PDF links work without file-launch support or an unpublished remote.
+\newcommand{\RepoRoot}{}
+\newcommand{\RepoBranch}{main}
+\newcommand{\RepoFile}[2]{\hyperref[app:code]{#2}}
+\expandafter\def\csname folder@config\endcsname{app:code}
+\expandafter\def\csname folder@calculations\endcsname{app:calculations}
+\expandafter\def\csname folder@analysis/modules\endcsname{app:code}
+\expandafter\def\csname folder@matlab/design\endcsname{app:code}
+\expandafter\def\csname folder@matlab/identification\endcsname{app:code}
+\expandafter\def\csname folder@matlab/validation\endcsname{app:code}
+\expandafter\def\csname folder@matlab/simulink\endcsname{app:code}
+\expandafter\def\csname folder@data/session1\endcsname{app:data}
+\expandafter\def\csname folder@data/session2\endcsname{app:demo}
+\expandafter\def\csname folder@hardware\endcsname{app:circuit}
+\expandafter\def\csname folder@analysis\endcsname{app:calculations}
+\expandafter\def\csname folder@results\endcsname{app:validation}
+\expandafter\def\csname folder@matlab\endcsname{app:code}
+\expandafter\def\csname folder@scripts\endcsname{app:repository}
+\expandafter\def\csname folder@report\endcsname{app:repository}
+\newcommand{\RepoLink}[2]{\edef\FolderTarget{\csname folder@#1\endcsname}\hyperref[\FolderTarget]{#2}}
+\newcommand{\RepoStatus}{Supporting files are bundled in the Git project. Links in this edition jump to the corresponding evidence appendix; online folder links require a published repository URL.}

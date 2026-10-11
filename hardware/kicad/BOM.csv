@@ -1,0 +1,22 @@
+Ref,Value,Description
+U1,LM741,Subtractor / attenuator
+U2,LM741,Non-inverting gain stage
+U3,LM741,Bias/summing stage
+R1,100k,U1 VREF input
+R2,1k,U1 non-inverting divider to GND
+R3,100k,U1 VSENSE input
+R4,1k,U1 feedback
+R5,4.7k,U2 feedback
+R6,10k,U2 inverting leg to GND
+R7,100k,U3 non-inverting input from U2
+R8,100k,U3 non-inverting divider to GND
+R9,100k,U3 bias input
+R10,100k,U3 feedback
+R11,3.9k,Bias network upper resistor
+P1,10k,Bias adjustment potentiometer
+R12,1.2k,Shunt across P1
+R13,22k,Bias network lower resistor
+C1-C6,100n,Supply decoupling
+J1,2-pin,"DAC-1 VREF, DAC-0 VSENSE"
+J2,2-pin,"ADC-1 command, ADC-2 sensor monitor"
+J3,3-pin,"+15 V, GND, -15 V"

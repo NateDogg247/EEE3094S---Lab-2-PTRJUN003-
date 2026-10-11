@@ -1,0 +1,244 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage[top=1in,bottom=1in,left=1in,right=1in,headheight=15pt]{geometry}
+\usepackage{microtype,amsmath,amssymb,graphicx,booktabs,array,tabularx,float}
+\usepackage[table]{xcolor}
+\usepackage{tikz,circuitikz,fancyhdr,enumitem,listings,caption}
+\usetikzlibrary{arrows.meta,positioning,calc}
+\definecolor{AngelBlue}{HTML}{8FC9E6}
+\definecolor{LinkBlue}{HTML}{397B9C}
+\colorlet{navy}{LinkBlue}
+\usepackage[unicode,colorlinks=true,linkcolor=LinkBlue,urlcolor=LinkBlue,citecolor=LinkBlue,bookmarksnumbered=true]{hyperref}
+\hypersetup{pdftitle={EEE3094S Lab 2: Worked Calculations},pdfauthor={Junaid Allan Pieters},pdfsubject={Kitticopter modelling, identification and proportional control}}
+\providecommand{\ReportRoot}{../report/}
+\providecommand{\ProjectRoot}{../}
+\graphicspath{{\ReportRoot figures/}}
+% Computer Modern, margins and leading follow the supplied LaTeX template.
+\linespread{1.06}
+\setlength{\parskip}{8pt plus2pt minus2pt}
+\widowpenalty=10000\clubpenalty=10000
+\setlist{nosep,leftmargin=*}
+\renewcommand{\arraystretch}{1.14}
+\captionsetup{font=small,labelfont=bf,skip=5pt}
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[R]{\small\nouppercase{\leftmark}}\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\numberwithin{equation}{section}
+\counterwithin{figure}{section}\counterwithin{table}{section}
+\newcommand{\HRule}{\textcolor{AngelBlue}{\rule{\linewidth}{0.5mm}}}
+\newcommand{\fig}[4]{\begin{figure}[H]\centering\includegraphics[width=#2\linewidth]{#1}\caption{#3}\label{#4}\end{figure}}
+\newcommand{\page}{\clearpage}
+\newcommand{\unit}[1]{\,\mathrm{#1}}
+\newcommand{\Fref}[1]{\hyperref[#1]{Figure~\ref*{#1}}}
+\newcommand{\Tref}[1]{\hyperref[#1]{Table~\ref*{#1}}}
+\newcommand{\Aref}[1]{\hyperref[#1]{Appendix~\ref*{#1}}}
+\newcommand{\Sref}[1]{\hyperref[#1]{Section~\ref*{#1}}}
+\newcommand{\Eref}[1]{\hyperref[#1]{Equation~(\ref*{#1})}}
+\newcommand{\thead}{\rowcolor{AngelBlue!28}}
+\input{\ReportRoot repository.tex}
+\begin{document}
+
+\begin{center}{\LARGE\textbf{Worked Calculations}}\\[4pt]
+{\large EEE3094S Lab 2 -- PTRJUN003}\\[4pt]
+Junaid Allan Pieters\end{center}
+\section{Model, Inputs and Definitions}
+The original CSV and screenshot are retained in the \RepoLink{data}{data folder}. The \RepoLink{analysis/modules}{Python modules} calculate the values below; \RepoLink{matlab/design}{MATLAB design code} provides the root-locus method. This supplement contains worked substitutions rather than additional experiments.
+\begin{align}
+\Delta u&=5.0-2.5=2.5\unit{V}, & u_h&=2.5\unit{V},\\
+G_y(s)&=\frac{14.2748}{s(8.1s+1)}, & k_s&=0.93\unit{V/m},\\
+b&=\frac1{8.1}=0.123456790\unit{s^{-1}}, & k_T&=\frac{14.2748}{8.1}=1.762320988,\\
+L(s)&=K_pk_sG_y(s), & K_p&=0.01432.
+\end{align}
+The closed-loop reference is a position step from 0 to 5 m; the identification input is a voltage step from 2.5 to 5.0 V. They are different signals.
+\begin{equation}\label{eq:sensor}
+k_s=\frac{\sum_i y_i y_{v,i}}{\sum_i y_i^2}.
+\end{equation}
+\begin{equation}\label{eq:overshoot}
+M_p=100e^{-\pi\zeta/\sqrt{1-\zeta^2}}.
+\end{equation}
+\begin{equation}\label{eq:exactstep}
+y(t)=5\left[1-e^{-\sigma t}\left(\cos\omega_dt+\frac{\sigma}{\omega_d}\sin\omega_dt\right)\right].
+\end{equation}
+\begin{equation}\label{eq:bias}
+\delta y=\frac{\delta u_b}{K_pk_s}.
+\end{equation}
+The circuit coefficients used for tolerance calculations are
+\begin{align}
+a_f&=R_4/R_3,& a_r&=(1+a_f)R_2/(R_1+R_2),\\
+g_2&=1+R_5/R_6,&g_3&=(1+R_{10}/(R_9+R_{\rm th}))R_8/(R_7+R_8).
+\end{align}
+\clearpage
+\section{Detailed Calculations}\label{app:calculations}
+\subsection{Identification and Timing}
+\Tref{tab:rawsamples} gives selected original samples and derived velocities. The finite manual step is evident in the input column. Endpoint times are listed for consistency with the CSV; each derivative physically belongs to its interval midpoint.
+\begin{table}[H]\centering\small
+\caption{Selected identification samples and backward-difference results.}\label{tab:rawsamples}
+\begin{tabular}{rrrrr}\toprule\thead
+$t$ [s] & $u$ [V] & $y_v$ [V] & $y$ [m] & $v_i$ [m/s]\\\midrule
+15.7 & 2.495 & 0.000 & 0.000 & 0.00\\
+15.8 & 2.908 & 0.000 & 0.000 & 0.00\\
+15.9 & 4.607 & 0.000 & 0.000 & 0.00\\
+16.0 & 5.000 & 0.034 & 0.037 & 0.37\\
+16.9 & 5.000 & 2.098 & 2.256 & 4.08\\
+17.0 & 5.000 & 2.513 & 2.703 & 4.47\\
+23.9 & 5.000 & 10.000 & 104.823 & 22.36\\
+24.0 & 5.000 & 10.000 & 107.076 & 22.53\\
+24.1 & 5.000 & 10.000 & 109.345 & 22.69\\\bottomrule
+\end{tabular}\end{table}
+\begin{align}
+v(24.0)&=(107.076-104.823)/0.1=22.53\unit{m/s},\\
+v(24.1)&=(109.345-107.076)/0.1=22.69\unit{m/s},\\
+\bar v_\infty&=\frac1{404}\sum_{t_i\ge120}\frac{y_i-y_{i-1}}{0.1}=35.68747525\unit{m/s},\\
+A&=(35.68747525-0)/2.5=14.27499010\unit{m/(s\,V)},\\
+v_{63}&=0.632(35.68747525)=22.55448436\unit{m/s},\\
+t_{63}&=24.0+0.1\frac{22.55448436-22.53}{22.69-22.53}=24.01530272\unit{s},\\
+\tau_{63}&=24.01530272-15.9=8.11530272\unit{s}.
+\end{align}
+The exponential fit minimises $\sum_{17\le t_i\le60}[v_i-V_\infty(1-e^{-(t_i-t_0)/\tau})]^2$. Its outputs are $V_\infty=35.68747059$ m/s, $\tau=8.10393362$ s and $t_0=15.91583783$ s. These two methods corroborate rounding to $\tau=8.1$ s. They do not create two experimental trials.
+
+The sensor least-squares fit in \Eref{eq:sensor} excludes zero and clipped pairs. The check $k_s(2.703)=0.93(2.703)=2.51379$ V agrees with the recorded 2.513 V within rounding.
+\page
+
+\subsection{Root-Locus Angle and Magnitude Checks}
+The locus for variable $K_p$ uses $G_0(s)=k_sG_y(s)=(Ak_s/\tau)/[s(s+1/\tau)]$, where $Ak_s/\tau=1.638959$ s$^{-2}$. At the selected upper pole $s_d=-0.0617284+j0.1402123$,
+\begin{align}
+\angle s_d&=113.76147^\circ,\qquad
+\angle(s_d+1/\tau)=66.23853^\circ,\\
+\angle G_0(s_d)&=-113.76147^\circ-66.23853^\circ=-180^\circ,\\
+K_p&=\frac1{|G_0(s_d)|}
+=\frac{|s_d|\,|s_d+1/\tau|}{Ak_s/\tau}
+=\frac{(0.153198845)^2}{1.63895852}=0.01432.
+\end{align}
+Both the negative-feedback angle criterion and magnitude criterion are satisfied. The quadratic roots independently give the same pole pair.
+
+\subsection{Nominal Step and Settling Calculation}
+Substituting into \Eref{eq:exactstep},
+\begin{equation}
+y(t)=5\left[1-e^{-0.061728395t}
+\left(\cos(0.140212308t)+0.44025\sin(0.140212308t)\right)\right].
+\end{equation}
+The first peak occurs at $t_p=\pi/\omega_d=22.405969$ s. Since $\cos\pi=-1$ and $\sin\pi=0$,
+\begin{equation}
+y(t_p)=5[1+e^{-0.061728395(22.405969)}]=6.254019\unit{m},
+\end{equation}
+so $M_p=(6.254019-5)/5\times100=25.080375\%$.
+
+The error envelope satisfies $|y-5|/5\le e^{-\sigma t}/\sqrt{1-\zeta^2}$. Solving this bound for 2\% gives
+\begin{equation}
+T_{\rm env}=-\frac{\ln(0.02\sqrt{1-0.4029299^2})}{0.061728395}=64.80975\unit{s}.
+\end{equation}
+Actual settling is found by evaluating the full response, locating the last sample for which $|y-5|>0.1$ m, and taking the next sample. A 0.005 s grid gives 54.89 s. This definition agrees with reference-based settling calculations \cite{stepinfo}.
+
+Command headroom follows from $u=2.5+K_pk_s(5-y)$: the highest command is 2.566588 V at the step, and the lowest is $2.5-0.01432(0.93)(1.254019)=2.483299$ V at the altitude peak. Neither reaches the 0 or 5 V limit.
+\page
+
+\subsection{Aerodynamic and Component Uncertainty}
+With fixed $k_T$, the uncertain characteristic polynomial is $s^2+b's+k_TK_pk_s$. The worst scalar case has $b'=0.9b_0$ and $K_p'=1.1K_{p,0}$. Applying the required damping ratio gives
+\begin{equation}\label{eq:jointbound}
+K_{p,0}<\frac{(0.9b_0)^2}{4k_Tk_s\zeta_{\min}^2(1.1)}
+=\frac{0.81}{1.1}(0.01815443)=0.01336826.
+\end{equation}
+At the supplied gain the worst-case damping is $(0.9/\sqrt{1.1})(0.4029299)=0.34575$, and \Eref{eq:overshoot} gives 31.42\% overshoot. This explains why passing drag-only uncertainty is insufficient for the joint case.
+
+For independent loop-resistor tolerances, use the U1 coefficients and U2/U3 gains defined in \Sref{sec:hardware}. Assign each of $R_1$--$R_{10}$ either 0.9 or 1.1 times its nominal value, then use both drag extremes. There are $2^{10}\times2=2048$ cases. The bias network is held at its nominal Thevenin resistance and zero-error output is recalibrated in each case. \Tref{tab:corners} reports this optimistic subset.
+\begin{table}[H]\centering\small
+\caption{Independent loop-resistor corner predictions.}\label{tab:corners}
+\begin{tabularx}{\linewidth}{Xr}\toprule\thead
+Quantity & Range / worst value\\\midrule
+Feedback gain $K_f$ & 0.009072--0.022784\\
+Reference/feedback ratio $a_r/a_f$ & 0.672104--1.487864\\
+Absolute DC tracking error & 48.7864\%\\
+Overshoot about each case's own final altitude & 38.9461\%\\\bottomrule
+\end{tabularx}\end{table}
+For example, $R_1=0.9(100\,\mathrm{k}\Omega)$, $R_2=1.1(1\,\mathrm{k}\Omega)$, $R_3=1.1(100\,\mathrm{k}\Omega)$ and $R_4=0.9(1\,\mathrm{k}\Omega)$ give
+\begin{equation}
+a_f=0.9/110=0.00818182,\quad
+\frac{a_r}{a_f}=\frac{(1+0.00818182)(1.1)/(90+1.1)}{0.00818182}=1.487864.
+\end{equation}
+Thus a 5 m reference tends to 7.43932 m even after hover recalibration. The type number cannot remove unequal reference and feedback scaling.
+\page
+\subsection{Practical Gain and Ratio Correction}
+The corner distributions in \Fref{fig:components} separate dynamic overshoot from DC ratio error.
+\fig{component_robustness}{.92}{Loop-resistor corners. Dashed limits are 30\% overshoot and 8\% tracking error. The histograms show corner counts, not probabilities.}{fig:components}
+Failure in this subset rejects a guarantee for all components. Bias-network and op-amp variations can add error. After matching the U1 ratios, a practical gain correction is to replace both 1 k$\Omega$ resistors with matched 680 $\Omega$ values:
+\begin{align}
+K_{p,\rm new}&=\frac{680}{100000}(1.47)(0.97427980)=0.009738901,\\
+\zeta_{\rm worst}&=\frac{0.9b_0}{2\sqrt{k_T(1.1K_{p,\rm new})k_s}}\approx0.4193,\\
+M_{p,\rm worst}&\approx23.44\%,\\
+|\delta u_b|_{\max}&=0.08(5)(0.009738901)(0.93)=3.623\unit{mV}.
+\end{align}
+This scalar check assumes matched reference and feedback ratios; it is not a guarantee for independent resistor corners. Lower gain increases damping but tightens the hover-bias allowance. The board must be recalibrated and retested after any change.
+\page
+
+\subsection{Experimental Metrics and Uncertainty}
+The digitised plot uses pixel bounds $x=602\ldots1414$ for 0--120 s and $p_y=60\ldots540$ for 20--0 m. Therefore
+\begin{align}
+t&=\frac{x-602}{1414-602}(120),\qquad h=\frac{540-p_y}{540-60}(20),\\
+\Delta t&=0.147783\unit{s/pixel},\qquad\Delta h=0.041667\unit{m/pixel}.
+\end{align}
+The extracted peak is 6.229167 m at 22.019704 s. With the displayed reference, terminal height and zero starting altitude,
+\begin{align}
+e_f&=5.033-4.897=0.136\unit{m},\\
+\eta_{\rm track}&=100(1-0.136/5.033)=97.297834\%,\\
+M_{p,\rm ref}&=100(6.229167-5.033)/5.033=23.766475\%,\\
+\delta M_{p,\rm ref}&\approx100(0.041667)/5.033=0.82787\text{ percentage points}.
+\end{align}
+This practical overshoot metric uses the commanded reference. If the terminal display is used as a proxy for the actual settled output, the conventional final-output-normalised overshoot is $(6.229167-4.897)/4.897\times100\approx27.20\%$. Both estimates are below 30\%, but the screenshot alone does not establish an exact asymptotic output.
+\Tref{tab:comparison} compares the analytical, simulated and experimental metrics.
+\begin{table}[H]\centering\small
+\caption{Comparison of calculation, simulation and retained experiment.}\label{tab:comparison}
+\begin{tabularx}{\linewidth}{lXXX}\toprule\thead
+Metric & Analytical & Simulation & Experiment\\\midrule
+Reference & 5.000 m & 5.000 m & 5.033 m\\
+Peak & 6.25402 m & 6.25402 m & $\approx6.229$ m\\
+Peak time & 22.40597 s & 22.405 s & $\approx22.020$ s\\
+Reference overshoot & 25.0804\% & 25.0804\% & $\approx23.7665\%$\\
+Tracking accuracy & 100\% ideal & $\to100\%$ & 97.2978\% displayed\\
+2\% reference settling & 64.81 s envelope & 54.89 s & Not established\\\bottomrule
+\end{tabularx}\end{table}
+For the 5.033 m reference the 8\% band is $5.033(1\pm0.08)=4.63036$--5.43564 m. The 2\% band is 4.93234--5.13366 m. The terminal height lies inside the first but outside the second. The discrepancy cannot be removed by redefining the settling band around the biased terminal value while claiming reference tracking.
+
+The command-bias calculation uses \Eref{eq:bias}: $\delta y=0.002/(0.01432\times0.93)=0.150177$ m. The illustrative test in \Fref{fig:disturbance} injects a positive 2 mV bias at 70 s; it is a model prediction rather than a recorded disturbance experiment.
+\page
+
+\section{Circuit Gain and Bias Loading}\label{sec:hardware}\label{app:loading}
+With the wiper unloaded, $R_P=P1\parallel R_{12}=10\parallel1.2=1.0714286$ k$\Omega$. The end-to-end current and pot-end voltages are
+\begin{align}
+I&=\frac{-15}{3.9+1.0714286+22}=-0.556143\unit{mA},\\
+V_A&=I(3.9)=-2.168962\unit{V},\qquad V_B=I(3.9+1.0714286)=-2.764831\unit{V},\\
+V_{\rm th}&=V_A+W(V_B-V_A).
+\end{align}
+Set the supply sources to zero and inject a 1 A test current at the wiper. The node-conductance equations for A, B and the wiper are
+\begin{equation}
+\begin{bmatrix}
+G_{11}+G_{12}+G_t&-G_{12}&-G_t\\
+-G_{12}&G_{13}+G_{12}+G_b&-G_b\\
+-G_t&-G_b&G_t+G_b
+\end{bmatrix}
+\begin{bmatrix}V_A'\\V_B'\\V_w'\end{bmatrix}
+=\begin{bmatrix}0\\0\\1\end{bmatrix},
+\end{equation}
+where $G_i=1/R_i$, $G_t=1/(WP1)$ and $G_b=1/[(1-W)P1]$. The test voltage $V_w'$ gives $R_{\rm th}$. Solving the hover equation
+\begin{equation}
+-\frac{R_{10}}{R_9+R_{\rm th}(W)}V_{\rm th}(W)=2.5
+\end{equation}
+gives $W=0.783080594$, $R_{\rm th}=5423.0014$ $\Omega$ and $V_{\rm th}=-2.6355750$ V. The loaded zero-error wiper is $-2.500$ V.
+
+For U3, define $r=R_{10}/(R_9+R_{\rm th})=0.94855960$. Since the non-inverting divider gives $V_+=V_2/2$, virtual short and KCL give
+\begin{align}
+u&=(1+r)V_+-rV_{\rm th}=\frac{1+r}{2}V_2-rV_{\rm th},\\
+g_3&=\frac{1+0.94855960}{2}=0.97427980,\\
+K_p&=\left(\frac{1}{100}\right)\left(1+\frac{4.7}{10}\right)(0.97427980)=0.014321913.
+\end{align}
+The ideal buffered result 0.0147 differs by 2.57\%, while the selected model value 0.01432 differs from the loaded calculation by only 0.0134\%. These are circuit-model calculations; a measured input/output slope of the final board was not supplied.
+\page
+
+
+\section{Defined Disturbance Prediction}
+\fig{disturbance_prediction}{.95}{Prediction for a +2 mV command bias introduced at 70 s; the shaded band is the 8\% reference band.}{fig:disturbance}
+The nominal shift is $0.002/(0.01432\times0.93)=0.150177$ m. This simulation is a prediction for a specified disturbance, not an experimentally measured rejection test.
+\begin{thebibliography}{9}
+\bibitem{stepinfo} MathWorks, \emph{stepinfo}: \href{https://www.mathworks.com/help/control/ref/dynamicsystem.stepinfo.html}{official documentation}.
+\end{thebibliography}
+\end{document}

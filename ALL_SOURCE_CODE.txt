@@ -1,0 +1,3346 @@
+COMPLETE ORGANISED SOURCE CODE: PTRJUN003 LAB 2
+Read CODE_GUIDE.md and calculations/PTRJUN003_Lab2_Calculations.pdf first.
+Python generated the report. MATLAB source is supplied and was not executed here.
+
+SOURCE INVENTORY
+analysis/analyse.py
+analysis/modules/__init__.py
+analysis/modules/controller.py
+analysis/modules/disturbance.py
+analysis/modules/hardware.py
+analysis/modules/identification.py
+analysis/modules/parameters.py
+analysis/modules/pipeline.py
+analysis/modules/plot_style.py
+analysis/modules/robustness.py
+calculations/main.tex
+config/lab_parameters.json
+hardware/Kitticopter_3OpAmp_Controller.asc
+hardware/kicad/Kitticopter_3OpAmp_Controller.pro
+hardware/kicad/Kitticopter_3OpAmp_Controller.sch
+main.tex
+matlab/build_simulink_model.m
+matlab/config/lab_parameters.m
+matlab/design/run_root_locus_design.m
+matlab/identification/identify_session1.m
+matlab/root_locus_design.m
+matlab/run_all.m
+matlab/simulink/create_simulink_model.m
+matlab/validation/verify_nominal_controller.m
+matlab/verify_controller.m
+report/main.tex
+report/repository.tex
+report/sections/appendices.tex
+report/sections/body.tex
+report/sections/circuit.tex
+report/sections/references.tex
+scripts/build.sh
+scripts/check_report.py
+scripts/make_indexes.py
+scripts/make_source_listing.py
+scripts/repository_internal.tex
+scripts/set_repository.py
+
+================================================================================
+FILE: analysis/analyse.py
+================================================================================
+"""Run all Lab 2 analysis stages from the project root or any directory."""
+
+from pathlib import Path
+import json
+from modules.pipeline import run_all
+
+if __name__ == "__main__":
+    results = run_all(Path(__file__).resolve().parents[1])
+    print(json.dumps(results, indent=2))
+
+
+================================================================================
+FILE: analysis/modules/__init__.py
+================================================================================
+"""Separate numerical stages for the Lab 2 report."""
+
+
+================================================================================
+FILE: analysis/modules/controller.py
+================================================================================
+"""Nominal closed-loop model, root locus, and step-response predictions."""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.signal import TransferFunction
+from scipy.signal import step
+from .plot_style import BLUE, ORANGE, GREEN, RED, exporter
+
+
+def run(project_root, parameters):
+    ROOT = project_root
+    FIG = ROOT / "report/figures"
+    RES = ROOT / "results"
+    A, tau, ks, kp = (parameters.A, parameters.tau, parameters.ks, parameters.kp)
+    b, kt = (parameters.b, parameters.kT)
+    blue, orange, green, red = (BLUE, ORANGE, GREEN, RED)
+    save = exporter(FIG)
+    metrics = {}
+    tt = np.linspace(
+        0, parameters.end_s, round(parameters.end_s / parameters.interval_s) + 1
+    )
+
+    def closed(k=kp, drag=b, amp=5):
+        _, yn = step(TransferFunction([kt * k * ks], [1, drag, kt * k * ks]), T=tt)
+        return amp * yn
+
+    def step_metrics(yy, amp=5):
+        z = np.flatnonzero(np.abs(yy - amp) > 0.02 * abs(amp))
+        return {
+            "overshoot_percent": float(max(0, (yy.max() - amp) / amp * 100)),
+            "peak_m": float(yy.max()),
+            "peak_time_s": float(tt[np.argmax(yy)]),
+            "settling_2percent_s": (
+                float(tt[min(z[-1] + 1, len(tt) - 1)]) if len(z) else 0
+            ),
+            "terminal_error_m": float(amp - yy[-1]),
+        }
+
+    nom = closed()
+    metrics["simulation_nominal"] = step_metrics(nom)
+    wn = np.sqrt(kt * kp * ks)
+    zeta = b / (2 * wn)
+    wd = np.sqrt(wn**2 - (b / 2) ** 2)
+    metrics.update(
+        {
+            "wn": wn,
+            "zeta": zeta,
+            "wd": wd,
+            "sigma": b / 2,
+            "overshoot_analytic_percent": 100
+            * np.exp(-np.pi * zeta / np.sqrt(1 - zeta * zeta)),
+            "peak_time_analytic_s": np.pi / wd,
+            "settling_envelope_s": -np.log(0.02 * np.sqrt(1 - zeta * zeta)) / (b / 2),
+        }
+    )
+    zmin = -np.log(0.3) / np.sqrt(np.pi**2 + np.log(0.3) ** 2)
+    metrics["zeta_min_30percent"] = zmin
+    metrics["kp_max_nominal"] = b * b / (4 * kt * ks * zmin * zmin)
+    metrics["kp_max_joint_scalar10"] = (0.9 * b) ** 2 / (
+        4 * kt * ks * zmin * zmin * 1.1
+    )
+    metrics["breakaway_gain"] = b * b / (4 * kt * ks)
+    gg = np.linspace(0, 0.035, 1200)
+    roots = np.array([np.roots([1, b, kt * k * ks]) for k in gg])
+    fig, ax = plt.subplots(figsize=(7.1, 3.8))
+    for i in range(2):
+        ax.plot(roots[:, i].real, roots[:, i].imag, color=blue)
+    ax.plot([0, -b], [0, 0], "x", ms=8, color="k", label="Open-loop poles")
+    pp = np.roots([1, b, kt * kp * ks])
+    ax.plot(pp.real, pp.imag, "o", color=orange, label="Kp = 0.01432")
+    ax.axvline(-b / 2, color=green, ls=":", label="Re = −1/(2τ) = −0.06173")
+    xx = np.linspace(-0.16, 0, 100)
+    slope = np.sqrt(1 - zmin * zmin) / zmin
+    ax.plot(xx, -xx * slope, "--", color="gray", label="30% overshoot boundary")
+    ax.plot(xx, xx * slope, "--", color="gray")
+    ax.axvline(-4 / 30, color=red, ls="--", label="30 s envelope target (unreachable)")
+    ax.set(
+        xlim=(-0.16, 0.012),
+        ylim=(-0.25, 0.25),
+        xlabel="Real part (s⁻¹)",
+        ylabel="Imaginary part (s⁻¹)",
+    )
+    ax.legend(fontsize=9, loc="upper left")
+    save(fig, "root_locus")
+    fig, axs = plt.subplots(2, 1, figsize=(7.1, 3.8), sharex=True)
+    axs[0].plot(tt, nom, color=blue, label="5 m step; nominal controller")
+    axs[0].axhline(5, color="k", ls="--", label="Reference 5 m")
+    axs[0].axhspan(4.9, 5.1, color=green, alpha=0.12, label="2% band")
+    axs[0].plot(
+        [metrics["simulation_nominal"]["peak_time_s"]], [nom.max()], "o", color=orange
+    )
+    axs[0].annotate(
+        f"Peak {nom.max():.3f} m\nOvershoot {metrics['simulation_nominal']['overshoot_percent']:.2f}%",
+        (metrics["simulation_nominal"]["peak_time_s"], nom.max()),
+        xytext=(42, 6.0),
+        arrowprops={"arrowstyle": "->"},
+        fontsize=10,
+    )
+    axs[0].set_ylabel("Position (m)")
+    axs[0].legend(fontsize=9, loc="lower right")
+    cmd = 2.5 + kp * ks * (5 - nom)
+    axs[1].plot(tt, cmd, color=orange)
+    axs[1].axhline(2.5, color="gray", ls=":")
+    axs[1].set(
+        xlim=(0, 100), xlabel="Time from reference step (s)", ylabel="Command (V)"
+    )
+    fig.tight_layout()
+    save(fig, "nominal_response")
+    pd.DataFrame(
+        {"time_s": tt, "reference_m": 5, "nominal_position_m": nom, "command_v": cmd}
+    ).to_csv(RES / "nominal_simulation.csv", index=False)
+    return metrics
+
+
+def closed_response(time_s, parameters, gain=None, drag=None, amplitude=5):
+    """Return a linear position step response with the sensor gain included."""
+    gain = parameters.kp if gain is None else gain
+    drag = parameters.b if drag is None else drag
+    coefficient = parameters.kT * gain * parameters.ks
+    _, response = step(
+        TransferFunction([coefficient], [1, drag, coefficient]), T=time_s
+    )
+    return amplitude * response
+
+
+def response_metrics(time_s, output_m, amplitude=5):
+    """Measure overshoot and the final entry into the reference-based 2% band."""
+    outside = np.flatnonzero(np.abs(output_m - amplitude) > 0.02 * abs(amplitude))
+    return {
+        "overshoot_percent": float(
+            max(0, (output_m.max() - amplitude) / amplitude * 100)
+        ),
+        "peak_m": float(output_m.max()),
+        "peak_time_s": float(time_s[np.argmax(output_m)]),
+        "settling_2percent_s": (
+            float(time_s[min(outside[-1] + 1, len(time_s) - 1)]) if len(outside) else 0
+        ),
+        "terminal_error_m": float(amplitude - output_m[-1]),
+    }
+
+
+================================================================================
+FILE: analysis/modules/disturbance.py
+================================================================================
+"""Illustrative actuator-bias simulation; this is a prediction, not an experiment."""
+
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.integrate import solve_ivp
+from .plot_style import BLUE, ORANGE, GREEN, RED, exporter
+
+
+def run(project_root, parameters):
+    ROOT = project_root
+    FIG = ROOT / "report/figures"
+    RES = ROOT / "results"
+    A, tau, ks, kp = (parameters.A, parameters.tau, parameters.ks, parameters.kp)
+    b, kt = (parameters.b, parameters.kT)
+    blue, orange, green, red = (BLUE, ORANGE, GREEN, RED)
+    save = exporter(FIG)
+    metrics = {}
+    di = 0.002
+    dtime = 70
+
+    def simdist(t, z):
+        yy, vv = z
+        bias = di if t >= dtime else 0
+        cmd = np.clip(2.5 + kp * ks * (5 - yy) + bias, 0, 5)
+        return [vv, kt * (cmd - 2.5) - b * vv]
+
+    s = solve_ivp(
+        simdist,
+        [0, 180],
+        [0, 0],
+        t_eval=np.linspace(0, 180, 3601),
+        rtol=1e-09,
+        atol=1e-10,
+        max_step=0.02,
+    )
+    fig, ax = plt.subplots(figsize=(7.1, 3.1))
+    ax.plot(s.t, s.y[0], color=blue)
+    ax.axhline(5, color="k", ls="--")
+    ax.axvline(dtime, color=orange, ls=":")
+    ax.axhspan(4.6, 5.4, color=green, alpha=0.12)
+    ax.set(xlabel="Time (s)", ylabel="Position (m)")
+    ax.text(80, 5.85, "Illustrative +2 mV actuator bias at 70 s")
+    save(fig, "disturbance_prediction")
+    metrics["input_bias_limit_for_5m_8percent_v"] = 0.08 * 5 * kp * ks
+    metrics["illustrative_bias_error_m"] = di / (kp * ks)
+    return metrics
+
+
+================================================================================
+FILE: analysis/modules/hardware.py
+================================================================================
+"""Session 2: digitise the retained screenshot and calculate experimental metrics."""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from PIL import Image
+from .plot_style import BLUE, ORANGE, GREEN, RED, exporter
+from .controller import closed_response
+
+
+def run(project_root, parameters):
+    ROOT = project_root
+    FIG = ROOT / "report/figures"
+    RES = ROOT / "results"
+    A, tau, ks, kp = (parameters.A, parameters.tau, parameters.ks, parameters.kp)
+    b, kt = (parameters.b, parameters.kT)
+    blue, orange, green, red = (BLUE, ORANGE, GREEN, RED)
+    save = exporter(FIG)
+    metrics = {}
+    tt = np.linspace(
+        0, parameters.end_s, round(parameters.end_s / parameters.interval_s) + 1
+    )
+    nom = closed_response(tt, parameters)
+    im = np.array(
+        Image.open(ROOT / "data/session2/hardware_step_test.jpeg").convert("RGB")
+    )
+    xlo, xhi, ylo, yhi = (602, 1414, 60, 540)
+    ts = []
+    ys = []
+    for x in range(xlo, xhi + 1):
+        rgb = im[ylo : yhi + 1, x, :].astype(float)
+        R, G, B = rgb.T
+        mask = (B - R > 35) & (B - G > 20) & (B > 100) & (R < 200)
+        ix = np.flatnonzero(mask)
+        if len(ix):
+            ts.append((x - xlo) * 120 / (xhi - xlo))
+            ys.append((yhi - (ylo + np.median(ix))) * 20 / (yhi - ylo))
+    td = np.array(ts)
+    yd = np.array(ys)
+    pd.DataFrame({"time_s_digitised": td, "altitude_m_digitised": yd}).to_csv(
+        RES / "hardware_screenshot_digitised.csv", index=False
+    )
+    mask = td <= 86.2
+    td = td[mask]
+    yd = yd[mask]
+    ref = 5.033
+    final = 4.897
+    err = ref - final
+    metrics["hardware_screenshot"] = {
+        "reference_m": ref,
+        "final_height_m": final,
+        "displayed_tracking_m": 0.137,
+        "displayed_command_v": 2.498,
+        "displayed_sensor_v": 4.553,
+        "display_time_s": 86.1,
+        "error_from_height_m": err,
+        "tracking_accuracy_percent": 100 * (1 - abs(err) / ref),
+        "digitised_peak_m": float(yd.max()),
+        "digitised_peak_time_s": float(td[np.argmax(yd)]),
+        "overshoot_relative_to_reference_percent": float((yd.max() - ref) / ref * 100),
+        "pixel_height_resolution_m": 20 / (yhi - ylo),
+        "pixel_time_resolution_s": 120 / (xhi - xlo),
+    }
+    outside = np.flatnonzero(abs(yd - ref) > 0.02 * ref)
+    outside8 = np.flatnonzero(abs(yd - ref) > 0.08 * ref)
+    metrics["hardware_screenshot"]["final_trace_within_2percent_reference"] = bool(
+        abs(yd[-1] - ref) <= 0.02 * ref
+    )
+    metrics["hardware_screenshot"]["entry_8percent_band_s"] = (
+        float(td[min(outside8[-1] + 1, len(td) - 1)]) if len(outside8) else 0
+    )
+    fig, ax = plt.subplots(figsize=(7.1, 3.0))
+    ax.plot(td, yd, color=blue, label="Experimental trace digitised from screenshot")
+    ax.plot(
+        tt, 5.033 * nom / 5, "--", color=orange, label="Nominal model (0 → 5.033 m)"
+    )
+    ax.axhline(ref, color="k", ls=":", label="Displayed reference 5.033 m")
+    ax.axhspan(0.92 * ref, 1.08 * ref, color=green, alpha=0.12, label="8% band")
+    ax.axhline(final, color=red, ls=":", label="Terminal display 4.897 m")
+    ax.set(xlim=(0, 88), ylim=(0, 7), xlabel="Graph time (s)", ylabel="Altitude (m)")
+    ax.legend(fontsize=9, loc="lower right")
+    save(fig, "hardware_comparison")
+    return metrics
+
+
+================================================================================
+FILE: analysis/modules/identification.py
+================================================================================
+"""Session 1: differentiate position, identify the model, and validate it."""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.optimize import least_squares
+from .plot_style import BLUE, ORANGE, GREEN, RED, exporter
+
+
+def run(project_root, parameters):
+    ROOT = project_root
+    FIG = ROOT / "report/figures"
+    RES = ROOT / "results"
+    A, tau, ks, kp = (parameters.A, parameters.tau, parameters.ks, parameters.kp)
+    b, kt = (parameters.b, parameters.kT)
+    blue, orange, green, red = (BLUE, ORANGE, GREEN, RED)
+    save = exporter(FIG)
+    metrics = {}
+    raw = pd.read_csv(ROOT / "data/session1/PTRJUN003_raw.csv")
+    reset = np.flatnonzero(raw["Time(s)"].diff().to_numpy() < 0)
+    start = int(reset[-1]) if len(reset) else 0
+    d = raw.iloc[start:, :4].copy().reset_index(drop=True)
+    t, u, sv, y = [d.iloc[:, i].to_numpy(float) for i in range(4)]
+    if not np.all(np.diff(t) > 0):
+        raise ValueError("Non-monotonic retained time")
+    v = np.r_[np.nan, np.diff(y) / np.diff(t)]
+    vmid = np.r_[np.nan, (t[:-1] + t[1:]) / 2]
+    ss = float(np.mean(v[t >= 120]))
+    Ass = ss / parameters.identification_step_v
+    target = 0.632 * ss
+    idx = np.flatnonzero(v >= target)[0]
+    t63 = float(
+        t[idx - 1]
+        + (target - v[idx - 1]) / (v[idx] - v[idx - 1]) * (t[idx] - t[idx - 1])
+    )
+    sel = (t >= 17) & (t <= 60)
+    fit = least_squares(
+        lambda p: p[0] * (1 - np.exp(-(t[sel] - p[2]) / p[1])) - v[sel],
+        [ss, 8.1, 15.9],
+        bounds=([30, 3, 15.5], [40, 15, 16.2]),
+        xtol=1e-12,
+        ftol=1e-12,
+        gtol=1e-12,
+    )
+    Vfit, taufit, t0fit = map(float, fit.x)
+    cal = (sv > 0) & (sv < 9.9) & (y > 0)
+    ksfit = float(y[cal] @ sv[cal] / (y[cal] @ y[cal]))
+
+    def pred_vel(tt):
+        return (
+            A
+            * parameters.identification_step_v
+            * (1 - np.exp(-np.maximum(tt - t0fit, 0) / tau))
+        )
+
+    def pred_pos(tt):
+        q = np.maximum(tt - t0fit, 0)
+        return A * parameters.identification_step_v * (q - tau * (1 - np.exp(-q / tau)))
+
+    vv = pred_vel(t)
+    yy = pred_pos(t)
+    train = (t >= 17) & (t <= 60)
+    valid = t > 60
+
+    def rmse(a, b):
+        return float(np.sqrt(np.mean((a - b) ** 2)))
+
+    metrics = {
+        "retained_rows": len(d),
+        "discarded_rows": start,
+        "sample_interval_s": 0.1,
+        "v_infinity_mps": ss,
+        "A_from_tail": Ass,
+        "v_63p2_mps": target,
+        "t_63p2_absolute_s": t63,
+        "tau_63p2_from_15p9_s": t63 - 15.9,
+        "fit_v_infinity": Vfit,
+        "fit_tau": taufit,
+        "fit_step_time": t0fit,
+        "ks_fit": ksfit,
+        "calibration_points": int(cal.sum()),
+        "velocity_rmse_fit_window": rmse(v[train], vv[train]),
+        "velocity_rmse_holdout": rmse(v[valid], vv[valid]),
+        "position_rmse_holdout": rmse(y[valid], yy[valid]),
+        "nominal_A": A,
+        "nominal_tau": tau,
+        "nominal_ks": ks,
+        "nominal_kp": kp,
+        "b": b,
+        "kT": kt,
+    }
+    d["Velocity(m/s)"] = v
+    d["Velocity_time_midpoint(s)"] = vmid
+    d["Model_velocity(m/s)"] = vv
+    d["Model_position(m)"] = yy
+    d.to_csv(RES / "session1_processed.csv", index=False)
+    fig, axs = plt.subplots(3, 1, figsize=(7.1, 4.5), sharex=True)
+    axs[0].plot(t, u, color=blue)
+    axs[0].axhline(2.5, ls=":", color="gray")
+    axs[0].set_ylabel("Input u (V)")
+    axs[0].axvline(15.9, color=orange, ls="--")
+    axs[0].text(25, 3.3, "Hover 2.5 V; final 5 V; Δu = 2.5 V")
+    axs[1].plot(t, y, color=blue, label="Position channel (m)")
+    axs[1].set_ylabel("Altitude y (m)")
+    axs[2].plot(t, sv, color=green)
+    axs[2].axhline(10, color=red, ls="--")
+    axs[2].set_ylabel("Sensor (V)")
+    axs[2].set_xlabel("Retained run time (s)")
+    axs[2].text(45, 4.5, "Voltage clips at 10 V; metre channel keeps increasing")
+    fig.tight_layout()
+    save(fig, "identification_record")
+    fig, ax = plt.subplots(figsize=(7.1, 3.5))
+    q = t - 15.9
+    ax.plot(q, v, color=blue, lw=1, label="Backward difference of position")
+    ax.plot(q, vv, "--", color=orange, label="First-order model")
+    ax.axhline(target, color=green, ls=":", label=f"63.2% = {target:.3f} m/s")
+    ax.axvline(t63 - 15.9, color=green, ls=":")
+    ax.axhline(ss, color="gray", ls=":")
+    ax.set(
+        xlim=(0, 60), ylim=(0, 39), xlabel="Time from step (s)", ylabel="Velocity (m/s)"
+    )
+    ax.text(12, 16, f"τ ≈ {t63 - 15.9:.2f} s; A ≈ {Ass:.4f} m/(s V)")
+    ax.legend(loc="lower right", fontsize=10)
+    save(fig, "velocity_identification")
+    fig, axs = plt.subplots(1, 2, figsize=(7.1, 3.1))
+    axs[0].plot(y[cal], sv[cal], "o", ms=3, color=blue, label="Unsaturated pairs")
+    xx = np.array([0, 10.5])
+    axs[0].plot(xx, ksfit * xx, color=orange, label=f"ks = {ksfit:.6f} V/m")
+    axs[0].set(xlabel="Altitude (m)", ylabel="Sensor output (V)")
+    axs[0].legend(fontsize=9)
+    axs[1].plot(
+        t[valid], v[valid] - vv[valid], color=blue, label="Held-out velocity residual"
+    )
+    axs[1].set(xlabel="Run time (s)", ylabel="Residual (m/s)")
+    axs[1].legend(fontsize=9)
+    fig.tight_layout()
+    save(fig, "validation_sensor")
+    fig, axs = plt.subplots(2, 1, figsize=(7.1, 3.8), sharex=True)
+    axs[0].plot(t, y, color=blue, label="Recorded position")
+    axs[0].plot(t, yy, "--", color=orange, label="Rounded model")
+    axs[0].set_ylabel("Altitude (m)")
+    axs[0].legend(fontsize=10)
+    axs[1].plot(t, y - yy, color=green)
+    axs[1].set(xlabel="Run time (s)", ylabel="Position residual (m)")
+    fig.tight_layout()
+    save(fig, "position_validation")
+    return metrics
+
+
+================================================================================
+FILE: analysis/modules/parameters.py
+================================================================================
+"""Load the same physical parameters used by MATLAB and the report."""
+
+from dataclasses import dataclass
+from pathlib import Path
+import json
+
+
+@dataclass(frozen=True)
+class LabParameters:
+    A: float
+    tau: float
+    ks: float
+    kp: float
+    hover_v: float
+    identification_step_v: float
+    reference_m: float
+    end_s: float
+    interval_s: float
+
+    @property
+    def b(self):
+        return 1 / self.tau
+
+    @property
+    def kT(self):
+        return self.A / self.tau
+
+    @classmethod
+    def load(cls, project_root: Path):
+        values = json.loads((project_root / "config/lab_parameters.json").read_text())
+        return cls(
+            values["A"],
+            values["tau_s"],
+            values["sensor_gain_V_per_m"],
+            values["controller_gain"],
+            values["hover_command_V"],
+            values["identification_step_V"],
+            values["reference_step_m"],
+            values["simulation_end_s"],
+            values["simulation_interval_s"],
+        )
+
+
+================================================================================
+FILE: analysis/modules/pipeline.py
+================================================================================
+"""Run the documented stages in order and save one consolidated result file."""
+
+import json
+from .parameters import LabParameters
+from .plot_style import configure
+from . import identification, controller, robustness, hardware, disturbance
+
+
+def run_all(project_root):
+    parameters = LabParameters.load(project_root)
+    (project_root / "results").mkdir(exist_ok=True)
+    configure()
+    metrics = {}
+    stages = [identification, controller, robustness, hardware, disturbance]
+    for stage in stages:
+        print("Running " + stage.__name__.split(".")[-1] + "...")
+        metrics.update(stage.run(project_root, parameters))
+    (project_root / "results/metrics.json").write_text(
+        json.dumps(metrics, indent=2) + "\n"
+    )
+    return metrics
+
+
+================================================================================
+FILE: analysis/modules/plot_style.py
+================================================================================
+"""Shared figure styling and PDF/PNG export."""
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+BLUE = "#508fac"
+ORANGE = "#d26a28"
+GREEN = "#2f7b62"
+RED = "#ab4242"
+
+
+def configure():
+    plt.rcParams.update(
+        {
+            "font.size": 12,
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+            "figure.dpi": 130,
+            "savefig.bbox": "tight",
+            "axes.grid": True,
+            "grid.alpha": 0.22,
+            "font.family": "serif",
+            "font.serif": ["CMU Serif", "DejaVu Serif"],
+            "mathtext.fontset": "cm",
+            "axes.labelsize": 12,
+        }
+    )
+
+
+def exporter(directory):
+    directory.mkdir(parents=True, exist_ok=True)
+
+    def save(figure, name):
+        figure.savefig(directory / (name + ".pdf"))
+        figure.savefig(directory / (name + ".png"), dpi=170)
+        plt.close(figure)
+
+    return save
+
+
+================================================================================
+FILE: analysis/modules/robustness.py
+================================================================================
+"""Aerodynamic uncertainty, loaded circuit gain, and independent resistor corners."""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.optimize import brentq
+import itertools
+from .plot_style import BLUE, ORANGE, GREEN, RED, exporter
+from .controller import closed_response, response_metrics
+
+
+def run(project_root, parameters):
+    ROOT = project_root
+    FIG = ROOT / "report/figures"
+    RES = ROOT / "results"
+    A, tau, ks, kp = (parameters.A, parameters.tau, parameters.ks, parameters.kp)
+    b, kt = (parameters.b, parameters.kT)
+    blue, orange, green, red = (BLUE, ORANGE, GREEN, RED)
+    save = exporter(FIG)
+    metrics = {}
+    tt = np.linspace(
+        0, parameters.end_s, round(parameters.end_s / parameters.interval_s) + 1
+    )
+
+    def closed(k=kp, drag=b, amp=5):
+        return closed_response(tt, parameters, k, drag, amp)
+
+    def step_metrics(y, amp=5):
+        return response_metrics(tt, y, amp)
+
+    fig, ax = plt.subplots(figsize=(7.1, 3.7))
+    rows = []
+    for factor in [0.9, 1, 1.1]:
+        yc = closed(drag=factor * b)
+        mm = step_metrics(yc)
+        rows.append({"b_factor": factor, **mm})
+        ax.plot(tt, yc, label=f"b × {factor:.1f}; Mp={mm['overshoot_percent']:.2f}%")
+    ax.axhline(5, color="k", ls="--")
+    ax.set(xlim=(0, 115), xlabel="Time (s)", ylabel="Position (m)")
+    ax.legend(fontsize=10)
+    save(fig, "aerodynamic_robustness")
+    metrics["aerodynamic_corners"] = rows
+    scalar = []
+    for bf, kf in itertools.product([0.9, 1.1], [0.9, 1.1]):
+        scalar.append(
+            {
+                "b_factor": bf,
+                "kp_factor": kf,
+                **step_metrics(closed(k=kp * kf, drag=b * bf)),
+            }
+        )
+    metrics["scalar_corners"] = scalar
+    Rnom = np.array(
+        [100000, 1000, 100000, 1000, 4700, 10000, 100000, 100000, 100000, 100000], float
+    )
+
+    def bias_thevenin(w):
+        r11, r12, r13, pot = (3900.0, 1200.0, 22000.0, 10000.0)
+        pa, pb = (pot * w, pot * (1 - w))
+        parallel = 1 / (1 / pot + 1 / r12)
+        current = -15 / (r11 + parallel + r13)
+        va = current * r11
+        vb = current * (r11 + parallel)
+        matrix = np.array(
+            [
+                [1 / r11 + 1 / r12 + 1 / pa, -1 / r12, -1 / pa],
+                [-1 / r12, 1 / r13 + 1 / r12 + 1 / pb, -1 / pb],
+                [-1 / pa, -1 / pb, 1 / pa + 1 / pb],
+            ]
+        )
+        rth = float(np.linalg.solve(matrix, [0, 0, 1])[2])
+        vth = va + w * (vb - va)
+        return (vth, rth, -vth * 100000 / (100000 + rth))
+
+    wpot = brentq(lambda w: bias_thevenin(w)[2] - 2.5, 0.01, 0.99)
+    vth, rth, ubias = bias_thevenin(wpot)
+    metrics["bias_network"] = {
+        "w_fraction": wpot,
+        "open_wiper_v": vth,
+        "thevenin_ohm": rth,
+        "loaded_hover_v": ubias,
+        "loaded_kp": 0.01 * 1.47 * (1 + 100000 / (100000 + rth)) / 2,
+    }
+    corners = []
+    for factors in itertools.product([0.9, 1.1], repeat=10):
+        R = Rnom * np.array(factors)
+        r1, r2, r3, r4, r5, r6, r7, r8, r9, r10 = R
+        af = r4 / r3
+        ar = (1 + af) * r2 / (r1 + r2)
+        g2 = 1 + r5 / r6
+        r = r10 / (r9 + rth)
+        g3 = (1 + r) * r8 / (r7 + r8)
+        K = af * g2 * g3
+        ratio = ar / af
+        for bf in [0.9, 1.1]:
+            ze = bf * b / (2 * np.sqrt(kt * K * ks))
+            os = 0 if ze >= 1 else 100 * np.exp(-np.pi * ze / np.sqrt(1 - ze * ze))
+            corners.append([bf, K, ratio, abs(1 - ratio) * 100, os])
+    co = pd.DataFrame(
+        corners,
+        columns=[
+            "b_factor",
+            "feedback_kp",
+            "reference_feedback_ratio",
+            "tracking_error_percent",
+            "overshoot_percent",
+        ],
+    )
+    co.to_csv(RES / "independent_resistor_corners.csv", index=False)
+    metrics["resistor_corners"] = {
+        "number": len(co),
+        "kp_min": co.feedback_kp.min(),
+        "kp_max": co.feedback_kp.max(),
+        "worst_tracking_error_percent": co.tracking_error_percent.max(),
+        "reference_ratio_min": co.reference_feedback_ratio.min(),
+        "reference_ratio_max": co.reference_feedback_ratio.max(),
+        "worst_overshoot_percent": co.overshoot_percent.max(),
+        "nominal_loaded_prediction": 0.01 * 1.47 * (1 + 100000 / (100000 + rth)) / 2,
+        "nominal_pot_fraction": wpot,
+        "nominal_pot_thevenin_ohm": rth,
+    }
+    fig, axs = plt.subplots(1, 2, figsize=(7.1, 3.2))
+    axs[0].hist(co.overshoot_percent, bins=28, color=blue)
+    axs[0].axvline(30, color=red, ls="--")
+    axs[0].set(xlabel="Overshoot (%)", ylabel="Corner count")
+    axs[1].hist(co.tracking_error_percent, bins=28, color=orange)
+    axs[1].axvline(8, color=red, ls="--")
+    axs[1].set(xlabel="Tracking error after bias trim (%)", ylabel="Corner count")
+    fig.tight_layout()
+    save(fig, "component_robustness")
+    newkp = 0.0068 * 1.47 * (1 + 100000 / (100000 + rth)) / 2
+    metrics["recommended_kp"] = newkp
+    metrics["recommended_worst_scalar_overshoot_percent"] = step_metrics(
+        closed(k=newkp * 1.1, drag=0.9 * b)
+    )["overshoot_percent"]
+    return metrics
+
+
+================================================================================
+FILE: calculations/main.tex
+================================================================================
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage[top=1in,bottom=1in,left=1in,right=1in,headheight=15pt]{geometry}
+\usepackage{microtype,amsmath,amssymb,graphicx,booktabs,array,tabularx,float}
+\usepackage[table]{xcolor}
+\usepackage{tikz,circuitikz,fancyhdr,enumitem,listings,caption}
+\usetikzlibrary{arrows.meta,positioning,calc}
+\definecolor{AngelBlue}{HTML}{8FC9E6}
+\definecolor{LinkBlue}{HTML}{397B9C}
+\colorlet{navy}{LinkBlue}
+\usepackage[unicode,colorlinks=true,linkcolor=LinkBlue,urlcolor=LinkBlue,citecolor=LinkBlue,bookmarksnumbered=true]{hyperref}
+\hypersetup{pdftitle={EEE3094S Lab 2: Worked Calculations},pdfauthor={Junaid Allan Pieters},pdfsubject={Kitticopter modelling, identification and proportional control}}
+\providecommand{\ReportRoot}{../report/}
+\providecommand{\ProjectRoot}{../}
+\graphicspath{{\ReportRoot figures/}}
+% Computer Modern, margins and leading follow the supplied LaTeX template.
+\linespread{1.06}
+\setlength{\parskip}{8pt plus2pt minus2pt}
+\widowpenalty=10000\clubpenalty=10000
+\setlist{nosep,leftmargin=*}
+\renewcommand{\arraystretch}{1.14}
+\captionsetup{font=small,labelfont=bf,skip=5pt}
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[R]{\small\nouppercase{\leftmark}}\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\numberwithin{equation}{section}
+\counterwithin{figure}{section}\counterwithin{table}{section}
+\newcommand{\HRule}{\textcolor{AngelBlue}{\rule{\linewidth}{0.5mm}}}
+\newcommand{\fig}[4]{\begin{figure}[H]\centering\includegraphics[width=#2\linewidth]{#1}\caption{#3}\label{#4}\end{figure}}
+\newcommand{\page}{\clearpage}
+\newcommand{\unit}[1]{\,\mathrm{#1}}
+\newcommand{\Fref}[1]{\hyperref[#1]{Figure~\ref*{#1}}}
+\newcommand{\Tref}[1]{\hyperref[#1]{Table~\ref*{#1}}}
+\newcommand{\Aref}[1]{\hyperref[#1]{Appendix~\ref*{#1}}}
+\newcommand{\Sref}[1]{\hyperref[#1]{Section~\ref*{#1}}}
+\newcommand{\Eref}[1]{\hyperref[#1]{Equation~(\ref*{#1})}}
+\newcommand{\thead}{\rowcolor{AngelBlue!28}}
+\input{\ReportRoot repository.tex}
+\begin{document}
+
+\begin{center}{\LARGE\textbf{Worked Calculations}}\\[4pt]
+{\large EEE3094S Lab 2 -- PTRJUN003}\\[4pt]
+Junaid Allan Pieters\end{center}
+\section{Model, Inputs and Definitions}
+The original CSV and screenshot are retained in the \RepoLink{data}{data folder}. The \RepoLink{analysis/modules}{Python modules} calculate the values below; \RepoLink{matlab/design}{MATLAB design code} provides the root-locus method. This supplement contains worked substitutions rather than additional experiments.
+\begin{align}
+\Delta u&=5.0-2.5=2.5\unit{V}, & u_h&=2.5\unit{V},\\
+G_y(s)&=\frac{14.2748}{s(8.1s+1)}, & k_s&=0.93\unit{V/m},\\
+b&=\frac1{8.1}=0.123456790\unit{s^{-1}}, & k_T&=\frac{14.2748}{8.1}=1.762320988,\\
+L(s)&=K_pk_sG_y(s), & K_p&=0.01432.
+\end{align}
+The closed-loop reference is a position step from 0 to 5 m; the identification input is a voltage step from 2.5 to 5.0 V. They are different signals.
+\begin{equation}\label{eq:sensor}
+k_s=\frac{\sum_i y_i y_{v,i}}{\sum_i y_i^2}.
+\end{equation}
+\begin{equation}\label{eq:overshoot}
+M_p=100e^{-\pi\zeta/\sqrt{1-\zeta^2}}.
+\end{equation}
+\begin{equation}\label{eq:exactstep}
+y(t)=5\left[1-e^{-\sigma t}\left(\cos\omega_dt+\frac{\sigma}{\omega_d}\sin\omega_dt\right)\right].
+\end{equation}
+\begin{equation}\label{eq:bias}
+\delta y=\frac{\delta u_b}{K_pk_s}.
+\end{equation}
+The circuit coefficients used for tolerance calculations are
+\begin{align}
+a_f&=R_4/R_3,& a_r&=(1+a_f)R_2/(R_1+R_2),\\
+g_2&=1+R_5/R_6,&g_3&=(1+R_{10}/(R_9+R_{\rm th}))R_8/(R_7+R_8).
+\end{align}
+\clearpage
+\section{Detailed Calculations}\label{app:calculations}
+\subsection{Identification and Timing}
+\Tref{tab:rawsamples} gives selected original samples and derived velocities. The finite manual step is evident in the input column. Endpoint times are listed for consistency with the CSV; each derivative physically belongs to its interval midpoint.
+\begin{table}[H]\centering\small
+\caption{Selected identification samples and backward-difference results.}\label{tab:rawsamples}
+\begin{tabular}{rrrrr}\toprule\thead
+$t$ [s] & $u$ [V] & $y_v$ [V] & $y$ [m] & $v_i$ [m/s]\\\midrule
+15.7 & 2.495 & 0.000 & 0.000 & 0.00\\
+15.8 & 2.908 & 0.000 & 0.000 & 0.00\\
+15.9 & 4.607 & 0.000 & 0.000 & 0.00\\
+16.0 & 5.000 & 0.034 & 0.037 & 0.37\\
+16.9 & 5.000 & 2.098 & 2.256 & 4.08\\
+17.0 & 5.000 & 2.513 & 2.703 & 4.47\\
+23.9 & 5.000 & 10.000 & 104.823 & 22.36\\
+24.0 & 5.000 & 10.000 & 107.076 & 22.53\\
+24.1 & 5.000 & 10.000 & 109.345 & 22.69\\\bottomrule
+\end{tabular}\end{table}
+\begin{align}
+v(24.0)&=(107.076-104.823)/0.1=22.53\unit{m/s},\\
+v(24.1)&=(109.345-107.076)/0.1=22.69\unit{m/s},\\
+\bar v_\infty&=\frac1{404}\sum_{t_i\ge120}\frac{y_i-y_{i-1}}{0.1}=35.68747525\unit{m/s},\\
+A&=(35.68747525-0)/2.5=14.27499010\unit{m/(s\,V)},\\
+v_{63}&=0.632(35.68747525)=22.55448436\unit{m/s},\\
+t_{63}&=24.0+0.1\frac{22.55448436-22.53}{22.69-22.53}=24.01530272\unit{s},\\
+\tau_{63}&=24.01530272-15.9=8.11530272\unit{s}.
+\end{align}
+The exponential fit minimises $\sum_{17\le t_i\le60}[v_i-V_\infty(1-e^{-(t_i-t_0)/\tau})]^2$. Its outputs are $V_\infty=35.68747059$ m/s, $\tau=8.10393362$ s and $t_0=15.91583783$ s. These two methods corroborate rounding to $\tau=8.1$ s. They do not create two experimental trials.
+
+The sensor least-squares fit in \Eref{eq:sensor} excludes zero and clipped pairs. The check $k_s(2.703)=0.93(2.703)=2.51379$ V agrees with the recorded 2.513 V within rounding.
+\page
+
+\subsection{Root-Locus Angle and Magnitude Checks}
+The locus for variable $K_p$ uses $G_0(s)=k_sG_y(s)=(Ak_s/\tau)/[s(s+1/\tau)]$, where $Ak_s/\tau=1.638959$ s$^{-2}$. At the selected upper pole $s_d=-0.0617284+j0.1402123$,
+\begin{align}
+\angle s_d&=113.76147^\circ,\qquad
+\angle(s_d+1/\tau)=66.23853^\circ,\\
+\angle G_0(s_d)&=-113.76147^\circ-66.23853^\circ=-180^\circ,\\
+K_p&=\frac1{|G_0(s_d)|}
+=\frac{|s_d|\,|s_d+1/\tau|}{Ak_s/\tau}
+=\frac{(0.153198845)^2}{1.63895852}=0.01432.
+\end{align}
+Both the negative-feedback angle criterion and magnitude criterion are satisfied. The quadratic roots independently give the same pole pair.
+
+\subsection{Nominal Step and Settling Calculation}
+Substituting into \Eref{eq:exactstep},
+\begin{equation}
+y(t)=5\left[1-e^{-0.061728395t}
+\left(\cos(0.140212308t)+0.44025\sin(0.140212308t)\right)\right].
+\end{equation}
+The first peak occurs at $t_p=\pi/\omega_d=22.405969$ s. Since $\cos\pi=-1$ and $\sin\pi=0$,
+\begin{equation}
+y(t_p)=5[1+e^{-0.061728395(22.405969)}]=6.254019\unit{m},
+\end{equation}
+so $M_p=(6.254019-5)/5\times100=25.080375\%$.
+
+The error envelope satisfies $|y-5|/5\le e^{-\sigma t}/\sqrt{1-\zeta^2}$. Solving this bound for 2\% gives
+\begin{equation}
+T_{\rm env}=-\frac{\ln(0.02\sqrt{1-0.4029299^2})}{0.061728395}=64.80975\unit{s}.
+\end{equation}
+Actual settling is found by evaluating the full response, locating the last sample for which $|y-5|>0.1$ m, and taking the next sample. A 0.005 s grid gives 54.89 s. This definition agrees with reference-based settling calculations \cite{stepinfo}.
+
+Command headroom follows from $u=2.5+K_pk_s(5-y)$: the highest command is 2.566588 V at the step, and the lowest is $2.5-0.01432(0.93)(1.254019)=2.483299$ V at the altitude peak. Neither reaches the 0 or 5 V limit.
+\page
+
+\subsection{Aerodynamic and Component Uncertainty}
+With fixed $k_T$, the uncertain characteristic polynomial is $s^2+b's+k_TK_pk_s$. The worst scalar case has $b'=0.9b_0$ and $K_p'=1.1K_{p,0}$. Applying the required damping ratio gives
+\begin{equation}\label{eq:jointbound}
+K_{p,0}<\frac{(0.9b_0)^2}{4k_Tk_s\zeta_{\min}^2(1.1)}
+=\frac{0.81}{1.1}(0.01815443)=0.01336826.
+\end{equation}
+At the supplied gain the worst-case damping is $(0.9/\sqrt{1.1})(0.4029299)=0.34575$, and \Eref{eq:overshoot} gives 31.42\% overshoot. This explains why passing drag-only uncertainty is insufficient for the joint case.
+
+For independent loop-resistor tolerances, use the U1 coefficients and U2/U3 gains defined in \Sref{sec:hardware}. Assign each of $R_1$--$R_{10}$ either 0.9 or 1.1 times its nominal value, then use both drag extremes. There are $2^{10}\times2=2048$ cases. The bias network is held at its nominal Thevenin resistance and zero-error output is recalibrated in each case. \Tref{tab:corners} reports this optimistic subset.
+\begin{table}[H]\centering\small
+\caption{Independent loop-resistor corner predictions.}\label{tab:corners}
+\begin{tabularx}{\linewidth}{Xr}\toprule\thead
+Quantity & Range / worst value\\\midrule
+Feedback gain $K_f$ & 0.009072--0.022784\\
+Reference/feedback ratio $a_r/a_f$ & 0.672104--1.487864\\
+Absolute DC tracking error & 48.7864\%\\
+Overshoot about each case's own final altitude & 38.9461\%\\\bottomrule
+\end{tabularx}\end{table}
+For example, $R_1=0.9(100\,\mathrm{k}\Omega)$, $R_2=1.1(1\,\mathrm{k}\Omega)$, $R_3=1.1(100\,\mathrm{k}\Omega)$ and $R_4=0.9(1\,\mathrm{k}\Omega)$ give
+\begin{equation}
+a_f=0.9/110=0.00818182,\quad
+\frac{a_r}{a_f}=\frac{(1+0.00818182)(1.1)/(90+1.1)}{0.00818182}=1.487864.
+\end{equation}
+Thus a 5 m reference tends to 7.43932 m even after hover recalibration. The type number cannot remove unequal reference and feedback scaling.
+\page
+\subsection{Practical Gain and Ratio Correction}
+The corner distributions in \Fref{fig:components} separate dynamic overshoot from DC ratio error.
+\fig{component_robustness}{.92}{Loop-resistor corners. Dashed limits are 30\% overshoot and 8\% tracking error. The histograms show corner counts, not probabilities.}{fig:components}
+Failure in this subset rejects a guarantee for all components. Bias-network and op-amp variations can add error. After matching the U1 ratios, a practical gain correction is to replace both 1 k$\Omega$ resistors with matched 680 $\Omega$ values:
+\begin{align}
+K_{p,\rm new}&=\frac{680}{100000}(1.47)(0.97427980)=0.009738901,\\
+\zeta_{\rm worst}&=\frac{0.9b_0}{2\sqrt{k_T(1.1K_{p,\rm new})k_s}}\approx0.4193,\\
+M_{p,\rm worst}&\approx23.44\%,\\
+|\delta u_b|_{\max}&=0.08(5)(0.009738901)(0.93)=3.623\unit{mV}.
+\end{align}
+This scalar check assumes matched reference and feedback ratios; it is not a guarantee for independent resistor corners. Lower gain increases damping but tightens the hover-bias allowance. The board must be recalibrated and retested after any change.
+\page
+
+\subsection{Experimental Metrics and Uncertainty}
+The digitised plot uses pixel bounds $x=602\ldots1414$ for 0--120 s and $p_y=60\ldots540$ for 20--0 m. Therefore
+\begin{align}
+t&=\frac{x-602}{1414-602}(120),\qquad h=\frac{540-p_y}{540-60}(20),\\
+\Delta t&=0.147783\unit{s/pixel},\qquad\Delta h=0.041667\unit{m/pixel}.
+\end{align}
+The extracted peak is 6.229167 m at 22.019704 s. With the displayed reference, terminal height and zero starting altitude,
+\begin{align}
+e_f&=5.033-4.897=0.136\unit{m},\\
+\eta_{\rm track}&=100(1-0.136/5.033)=97.297834\%,\\
+M_{p,\rm ref}&=100(6.229167-5.033)/5.033=23.766475\%,\\
+\delta M_{p,\rm ref}&\approx100(0.041667)/5.033=0.82787\text{ percentage points}.
+\end{align}
+This practical overshoot metric uses the commanded reference. If the terminal display is used as a proxy for the actual settled output, the conventional final-output-normalised overshoot is $(6.229167-4.897)/4.897\times100\approx27.20\%$. Both estimates are below 30\%, but the screenshot alone does not establish an exact asymptotic output.
+\Tref{tab:comparison} compares the analytical, simulated and experimental metrics.
+\begin{table}[H]\centering\small
+\caption{Comparison of calculation, simulation and retained experiment.}\label{tab:comparison}
+\begin{tabularx}{\linewidth}{lXXX}\toprule\thead
+Metric & Analytical & Simulation & Experiment\\\midrule
+Reference & 5.000 m & 5.000 m & 5.033 m\\
+Peak & 6.25402 m & 6.25402 m & $\approx6.229$ m\\
+Peak time & 22.40597 s & 22.405 s & $\approx22.020$ s\\
+Reference overshoot & 25.0804\% & 25.0804\% & $\approx23.7665\%$\\
+Tracking accuracy & 100\% ideal & $\to100\%$ & 97.2978\% displayed\\
+2\% reference settling & 64.81 s envelope & 54.89 s & Not established\\\bottomrule
+\end{tabularx}\end{table}
+For the 5.033 m reference the 8\% band is $5.033(1\pm0.08)=4.63036$--5.43564 m. The 2\% band is 4.93234--5.13366 m. The terminal height lies inside the first but outside the second. The discrepancy cannot be removed by redefining the settling band around the biased terminal value while claiming reference tracking.
+
+The command-bias calculation uses \Eref{eq:bias}: $\delta y=0.002/(0.01432\times0.93)=0.150177$ m. The illustrative test in \Fref{fig:disturbance} injects a positive 2 mV bias at 70 s; it is a model prediction rather than a recorded disturbance experiment.
+\page
+
+\section{Circuit Gain and Bias Loading}\label{sec:hardware}\label{app:loading}
+With the wiper unloaded, $R_P=P1\parallel R_{12}=10\parallel1.2=1.0714286$ k$\Omega$. The end-to-end current and pot-end voltages are
+\begin{align}
+I&=\frac{-15}{3.9+1.0714286+22}=-0.556143\unit{mA},\\
+V_A&=I(3.9)=-2.168962\unit{V},\qquad V_B=I(3.9+1.0714286)=-2.764831\unit{V},\\
+V_{\rm th}&=V_A+W(V_B-V_A).
+\end{align}
+Set the supply sources to zero and inject a 1 A test current at the wiper. The node-conductance equations for A, B and the wiper are
+\begin{equation}
+\begin{bmatrix}
+G_{11}+G_{12}+G_t&-G_{12}&-G_t\\
+-G_{12}&G_{13}+G_{12}+G_b&-G_b\\
+-G_t&-G_b&G_t+G_b
+\end{bmatrix}
+\begin{bmatrix}V_A'\\V_B'\\V_w'\end{bmatrix}
+=\begin{bmatrix}0\\0\\1\end{bmatrix},
+\end{equation}
+where $G_i=1/R_i$, $G_t=1/(WP1)$ and $G_b=1/[(1-W)P1]$. The test voltage $V_w'$ gives $R_{\rm th}$. Solving the hover equation
+\begin{equation}
+-\frac{R_{10}}{R_9+R_{\rm th}(W)}V_{\rm th}(W)=2.5
+\end{equation}
+gives $W=0.783080594$, $R_{\rm th}=5423.0014$ $\Omega$ and $V_{\rm th}=-2.6355750$ V. The loaded zero-error wiper is $-2.500$ V.
+
+For U3, define $r=R_{10}/(R_9+R_{\rm th})=0.94855960$. Since the non-inverting divider gives $V_+=V_2/2$, virtual short and KCL give
+\begin{align}
+u&=(1+r)V_+-rV_{\rm th}=\frac{1+r}{2}V_2-rV_{\rm th},\\
+g_3&=\frac{1+0.94855960}{2}=0.97427980,\\
+K_p&=\left(\frac{1}{100}\right)\left(1+\frac{4.7}{10}\right)(0.97427980)=0.014321913.
+\end{align}
+The ideal buffered result 0.0147 differs by 2.57\%, while the selected model value 0.01432 differs from the loaded calculation by only 0.0134\%. These are circuit-model calculations; a measured input/output slope of the final board was not supplied.
+\page
+
+
+\section{Defined Disturbance Prediction}
+\fig{disturbance_prediction}{.95}{Prediction for a +2 mV command bias introduced at 70 s; the shaded band is the 8\% reference band.}{fig:disturbance}
+The nominal shift is $0.002/(0.01432\times0.93)=0.150177$ m. This simulation is a prediction for a specified disturbance, not an experimentally measured rejection test.
+\begin{thebibliography}{9}
+\bibitem{stepinfo} MathWorks, \emph{stepinfo}: \href{https://www.mathworks.com/help/control/ref/dynamicsystem.stepinfo.html}{official documentation}.
+\end{thebibliography}
+\end{document}
+
+
+================================================================================
+FILE: config/lab_parameters.json
+================================================================================
+{
+  "A": 14.2748,
+  "tau_s": 8.1,
+  "sensor_gain_V_per_m": 0.93,
+  "controller_gain": 0.01432,
+  "hover_command_V": 2.5,
+  "identification_step_V": 2.5,
+  "reference_step_m": 5.0,
+  "actuator_min_V": 0.0,
+  "actuator_max_V": 5.0,
+  "simulation_end_s": 160.0,
+  "simulation_interval_s": 0.005,
+  "overshoot_limit_fraction": 0.3,
+  "tracking_error_limit_fraction": 0.08,
+  "settling_band_fraction": 0.02,
+  "settling_design_target_s": 30.0
+}
+
+
+================================================================================
+FILE: hardware/Kitticopter_3OpAmp_Controller.asc
+================================================================================
+Version 4
+SHEET 1 2304 1280
+WIRE 352 304 448 304
+WIRE 352 336 448 336
+WIRE 528 304 528 400
+WIRE 528 400 560 400
+WIRE 592 320 640 320
+WIRE 640 320 640 400
+WIRE 592 320 900 320
+WIRE 900 320 900 336
+WIRE 900 336 1068 336
+WIRE 1068 240 1068 304
+WIRE 1132 320 1148 320
+WIRE 1148 240 1148 320
+WIRE 1132 320 1440 320
+WIRE 1440 320 1440 336
+WIRE 1440 336 1528 336
+WIRE 1440 304 1528 304
+WIRE 1608 304 1608 400
+WIRE 1672 320 1688 320
+WIRE 1688 320 1688 400
+WIRE 1672 320 1960 320
+WIRE 720 880 896 880
+WIRE 896 880 896 928
+WIRE 896 1008 896 1040
+WIRE 720 1040 896 1040
+FLAG 352 336 VREF
+FLAG 352 304 VSENSE
+FLAG 528 416 0
+FLAG 1068 384 0
+FLAG 1608 256 0
+FLAG 1440 304 WIPER
+FLAG 1960 320 COMMAND
+FLAG 560 288 VCC
+FLAG 560 352 VEE
+FLAG 1100 288 VCC
+FLAG 1100 352 VEE
+FLAG 1640 288 VCC
+FLAG 1640 352 VEE
+FLAG 128 560 VREF
+FLAG 128 640 0
+FLAG 256 560 VSENSE
+FLAG 256 640 0
+FLAG 128 832 VCC
+FLAG 128 912 0
+FLAG 256 832 VEE
+FLAG 256 912 0
+FLAG 480 464 VCC
+FLAG 480 528 0
+FLAG 544 464 VEE
+FLAG 544 528 0
+FLAG 1040 464 VCC
+FLAG 1040 528 0
+FLAG 1104 464 VEE
+FLAG 1104 528 0
+FLAG 1584 464 VCC
+FLAG 1584 528 0
+FLAG 1648 464 VEE
+FLAG 1648 528 0
+FLAG 720 800 0
+FLAG 720 960 WIPER
+FLAG 720 1120 VEE
+SYMBOL Opamps\\UniversalOpamp2 560 320 R0
+SYMATTR SpiceModel level.2
+SYMATTR InstName U1
+SYMATTR Value2 Avol=200k GBW=1Meg Slew=0.5Meg
+SYMATTR SpiceLine ilimit=25m rail=2 Vos=0 phimargin=60
+SYMATTR SpiceLine2 en=0 enk=0 in=0 ink=0 Rin=500Meg
+SYMBOL res 544 320 R90
+WINDOW 0 0 56 VBottom 2
+WINDOW 3 32 56 VTop 2
+SYMATTR InstName R1
+SYMATTR Value 100k
+SYMBOL res 512 320 R0
+SYMATTR InstName R2
+SYMATTR Value 1k
+SYMBOL res 544 288 R90
+WINDOW 0 0 56 VBottom 2
+WINDOW 3 32 56 VTop 2
+SYMATTR InstName R3
+SYMATTR Value 100k
+SYMBOL res 656 384 R90
+WINDOW 0 0 56 VBottom 2
+WINDOW 3 32 56 VTop 2
+SYMATTR InstName R4
+SYMATTR Value 1k
+SYMBOL Opamps\\UniversalOpamp2 1100 320 R0
+SYMATTR SpiceModel level.2
+SYMATTR InstName U2
+SYMATTR Value2 Avol=200k GBW=1Meg Slew=0.5Meg
+SYMATTR SpiceLine ilimit=25m rail=2 Vos=0 phimargin=60
+SYMATTR SpiceLine2 en=0 enk=0 in=0 ink=0 Rin=500Meg
+SYMBOL res 1052 256 R270
+WINDOW 0 32 56 VBottom 2
+WINDOW 3 0 56 VTop 2
+SYMATTR InstName R5
+SYMATTR Value 4.7k
+SYMBOL res 1052 288 R0
+SYMATTR InstName R6
+SYMATTR Value 10k
+SYMBOL Opamps\\UniversalOpamp2 1640 320 R0
+SYMATTR SpiceModel level.2
+SYMATTR InstName U3
+SYMATTR Value2 Avol=200k GBW=1Meg Slew=0.5Meg
+SYMATTR SpiceLine ilimit=25m rail=2 Vos=0 phimargin=60
+SYMATTR SpiceLine2 en=0 enk=0 in=0 ink=0 Rin=500Meg
+SYMBOL res 1624 320 R90
+WINDOW 0 0 56 VBottom 2
+WINDOW 3 32 56 VTop 2
+SYMATTR InstName R7
+SYMATTR Value 100k
+SYMBOL res 1624 352 R180
+SYMATTR InstName R8
+SYMATTR Value 100k
+SYMBOL res 1624 288 R90
+WINDOW 0 0 56 VBottom 2
+WINDOW 3 32 56 VTop 2
+SYMATTR InstName R9
+SYMATTR Value 100k
+SYMBOL res 1592 416 R270
+WINDOW 0 32 56 VBottom 2
+WINDOW 3 0 56 VTop 2
+SYMATTR InstName R10
+SYMATTR Value 100k
+SYMBOL voltage 128 544 R0
+WINDOW 123 0 0 Left 0
+WINDOW 39 0 0 Left 0
+SYMATTR InstName VREF_SRC
+SYMATTR Value 4.65
+SYMBOL voltage 256 544 R0
+WINDOW 123 0 0 Left 0
+WINDOW 39 0 0 Left 0
+SYMATTR InstName VSENSE_SRC
+SYMATTR Value 4.65
+SYMBOL voltage 128 816 R0
+WINDOW 123 0 0 Left 0
+WINDOW 39 0 0 Left 0
+SYMATTR InstName VCC_SRC
+SYMATTR Value 15
+SYMBOL voltage 256 816 R0
+WINDOW 123 0 0 Left 0
+WINDOW 39 0 0 Left 0
+SYMATTR InstName VEE_SRC
+SYMATTR Value -15
+SYMBOL cap 464 464 R0
+SYMATTR InstName C1
+SYMATTR Value 100n
+SYMBOL cap 528 464 R0
+SYMATTR InstName C2
+SYMATTR Value 100n
+SYMBOL cap 1024 464 R0
+SYMATTR InstName C3
+SYMATTR Value 100n
+SYMBOL cap 1088 464 R0
+SYMATTR InstName C4
+SYMATTR Value 100n
+SYMBOL cap 1568 464 R0
+SYMATTR InstName C5
+SYMATTR Value 100n
+SYMBOL cap 1632 464 R0
+SYMATTR InstName C6
+SYMATTR Value 100n
+SYMBOL res 704 784 R0
+SYMATTR InstName R11
+SYMATTR Value 3.9k
+SYMBOL res 704 864 R0
+SYMATTR InstName P1_TOP
+SYMATTR Value {10k*W}
+SYMBOL res 704 944 R0
+SYMATTR InstName P1_BOT
+SYMATTR Value {10k*(1-W)}
+SYMBOL res 704 1024 R0
+SYMATTR InstName R13
+SYMATTR Value 22k
+SYMBOL res 880 912 R0
+SYMATTR InstName R12
+SYMATTR Value 1.2k
+TEXT 320 112 Left 3 ;KITTICOPTER THREE-OP-AMP CONTROLLER  |  Kp ~= 0.01432 V/V
+TEXT 320 152 Left 2 ;Plant: 14.2748/[s(8.1s+1)]    Sensor: 0.93 V/m    Hardware op-amps: 741, +/-15 V
+TEXT 352 216 Left 2 ;U1: subtract and attenuate x0.01
+TEXT 936 216 Left 2 ;U2: non-inverting gain x1.47
+TEXT 1488 216 Left 2 ;U3: add calibrated +2.5 V bias
+TEXT 352 448 Left 2 ;U1_OUT = 0.01*(VREF - VSENSE)
+TEXT 936 448 Left 2 ;U2_OUT = 1.47*U1_OUT
+TEXT 1488 448 Left 2 ;V(COMMAND) ~= 2.5 + 0.01432*(VREF - VSENSE)
+TEXT 64 504 Left 2 ;DAQ / bench test sources
+TEXT 80 672 Left 2 ;DAC-1 setpoint: 4.65 V for 5 m
+TEXT 80 704 Left 2 ;DAC-0 / ADC-2 sensor feedback: 4.65 V at 5 m
+TEXT 64 768 Left 2 ;Power rails
+TEXT 392 568 Left 2 ;100 nF decoupling at EACH op-amp: VCC->GND and VEE->GND
+TEXT 608 736 Left 2 ;BIAS POTENTIOMETER NETWORK
+TEXT 608 768 Left 2 ;R11=3.9k to GND, P1=10k, R12=1.2k shunt across P1, R13=22k to -15 V
+TEXT 608 1152 Left 2 ;P1 is represented by P1_TOP + P1_BOT.  W=0 is top end; W=1 is bottom end.
+TEXT 608 1184 Left 2 ;Nominal calibrated setting W=0.7830806 gives WIPER ~= -2.500 V when VREF=VSENSE=4.65 V.
+TEXT 1184 760 Left 2 ;CALIBRATION
+TEXT 1184 792 Left 2 ;1) Set VREF = VSENSE = 4.650 V.
+TEXT 1184 824 Left 2 ;2) Adjust W (hardware: P1) until V(COMMAND) = +2.500 V.
+TEXT 1184 856 Left 2 ;3) Keep P1 fixed during tracking.
+TEXT 1184 888 Left 2 ;The 1.2k shunt narrows the pot range and the finite loading gives Kp ~= 0.0143219 V/V.
+TEXT 1184 952 Left 2 ;741 hardware pin reminder: pin 7=+15 V, pin 4=-15 V; pins 1, 5 and 8 unused.
+TEXT 1184 984 Left 2 ;UniversalOpamp2 is used here with approximate 741 dynamics so the schematic runs without an external model.
+TEXT 1184 1056 Left 2 !.param W=0.7830806
+TEXT 1184 1088 Left 2 !.op
+
+
+================================================================================
+FILE: hardware/kicad/Kitticopter_3OpAmp_Controller.pro
+================================================================================
+update=0
+last_client=eeschema
+[general]
+version=1
+[eeschema]
+version=1
+LibDir=
+[eeschema/libraries]
+
+
+================================================================================
+FILE: hardware/kicad/Kitticopter_3OpAmp_Controller.sch
+================================================================================
+EESchema Schematic File Version 4
+LIBS:power
+LIBS:device
+LIBS:Connector_Generic
+LIBS:Amplifier_Operational
+EELAYER 29 0
+EELAYER END
+$Descr A3 16535 11693
+Sheet 1 1
+Title "Kitticopter Three-Op-Amp Controller"
+Date "2026-10-10"
+Rev "1.0"
+Comp "EEE3094S Lab 2"
+Comment1 "Kp ≈ 0.0143 V/V | Plant 14.2748/[s(8.1s+1)] | Sensor 0.93 V/m"
+Comment2 "741 op-amps, ±15 V supplies, 100 nF decoupling at each op-amp"
+Comment3 "Vcommand ≈ 2.5 + 0.0143(Vref - Vsensor)"
+Comment4 "Calibrate P1 with Vref = Vsensor = 4.650 V until ADC-1 = +2.500 V"
+$EndDescr
+Text Notes 900 700 0    120  ~ 24
+KITTICOPTER THREE-OP-AMP CONTROLLER — Kp ≈ 0.0143 V/V
+Text Notes 900 950 0    60   ~ 12
+Plant: 14.2748/[s(8.1s+1)]     Sensor: 0.93 V/m     Nominal overshoot: 25.1%     2% settling: 54.9 s
+Text Notes 2500 1250 0    70   ~ 14
+U1: SUBTRACT AND ATTENUATE ×0.01
+Text Notes 6500 1250 0    70   ~ 14
+U2: NON-INVERTING GAIN ×1.47
+Text Notes 10300 1250 0    70   ~ 14
+U3: ADD CALIBRATED +2.5 V BIAS
+
+$Comp
+L Connector_Generic:Conn_01x02 J1
+U 1 1 1001
+P 1250 1950
+F 0 "J1" H 1168 2167 50  0000 C CNN
+F 1 "DAQ INPUTS" H 1168 2076 50 0000 C CNN
+	1    1250 1950
+	-1 0 0 -1
+$EndComp
+Text Label 1500 1950 0    50   ~ 0
+VREF
+Text Label 1500 2050 0    50   ~ 0
+VSENSE
+Text Notes 900 1750 0    50   ~ 0
+DAC-1: setpoint
+Text Notes 900 2150 0    50   ~ 0
+DAC-0: sensor feedback
+Wire Wire Line
+	1450 1950 2050 1950
+Wire Wire Line
+	1450 2050 2050 2050
+
+$Comp
+L Device:R R1
+U 1 1 1101
+P 2350 1950
+F 0 "R1" V 2143 1950 50 0000 C CNN
+F 1 "100k" V 2234 1950 50 0000 C CNN
+	1    2350 1950
+	0 1 1 0
+$EndComp
+Wire Wire Line
+	2050 1950 2200 1950
+Wire Wire Line
+	2500 1950 2850 1950
+$Comp
+L Device:R R2
+U 1 1 1102
+P 2700 1700
+F 0 "R2" H 2770 1746 50 0000 L CNN
+F 1 "1k" H 2770 1655 50 0000 L CNN
+	1    2700 1700
+	1 0 0 -1
+$EndComp
+Wire Wire Line
+	2700 1850 2700 1950
+Wire Wire Line
+	2700 1950 2850 1950
+Connection ~ 2700 1950
+Text Label 2700 1450 0 50 ~ 0
+GND
+Wire Wire Line
+	2700 1550 2700 1450
+
+$Comp
+L Device:R R3
+U 1 1 1103
+P 2350 2150
+F 0 "R3" V 2450 2150 50 0000 C CNN
+F 1 "100k" V 2550 2150 50 0000 C CNN
+	1    2350 2150
+	0 1 1 0
+$EndComp
+Wire Wire Line
+	2050 2050 2050 2150
+Wire Wire Line
+	2050 2150 2200 2150
+Wire Wire Line
+	2500 2150 2850 2150
+
+$Comp
+L Amplifier_Operational:LM741 U1
+U 1 1 1201
+P 3150 2050
+F 0 "U1" H 3494 2096 50 0000 L CNN
+F 1 "LM741" H 3494 2005 50 0000 L CNN
+	1    3150 2050
+	1 0 0 -1
+$EndComp
+Wire Wire Line
+	3450 2050 3900 2050
+Text Label 3550 2050 0 50 ~ 0
+U1_OUT
+$Comp
+L Device:R R4
+U 1 1 1104
+P 3200 2450
+F 0 "R4" V 2993 2450 50 0000 C CNN
+F 1 "1k" V 3084 2450 50 0000 C CNN
+	1    3200 2450
+	0 1 1 0
+$EndComp
+Wire Wire Line
+	2850 2150 2850 2450
+Wire Wire Line
+	2850 2450 3050 2450
+Wire Wire Line
+	3350 2450 3700 2450
+Wire Wire Line
+	3700 2450 3700 2050
+Connection ~ 3700 2050
+Text Notes 2600 2750 0 50 ~ 0
+U1_OUT = 0.01(VREF − VSENSE)
+
+Text Label 3050 1650 0 50 ~ 0
++15V
+Text Label 3050 2450 2 50 ~ 0
+-15V
+
+Wire Wire Line
+	3900 2050 6450 2050
+
+$Comp
+L Amplifier_Operational:LM741 U2
+U 1 1 1202
+P 6750 2050
+F 0 "U2" H 7094 2096 50 0000 L CNN
+F 1 "LM741" H 7094 2005 50 0000 L CNN
+	1    6750 2050
+	1 0 0 -1
+$EndComp
+Wire Wire Line
+	7050 2050 7550 2050
+Text Label 7150 2050 0 50 ~ 0
+U2_OUT
+$Comp
+L Device:R R5
+U 1 1 1301
+P 6750 2500
+F 0 "R5" V 6543 2500 50 0000 C CNN
+F 1 "4.7k" V 6634 2500 50 0000 C CNN
+	1    6750 2500
+	0 1 1 0
+$EndComp
+Wire Wire Line
+	6450 2150 6250 2150
+Wire Wire Line
+	6250 2150 6250 2500
+Wire Wire Line
+	6250 2500 6600 2500
+Wire Wire Line
+	6900 2500 7350 2500
+Wire Wire Line
+	7350 2500 7350 2050
+Connection ~ 7350 2050
+$Comp
+L Device:R R6
+U 1 1 1302
+P 6100 2450
+F 0 "R6" H 6170 2496 50 0000 L CNN
+F 1 "10k" H 6170 2405 50 0000 L CNN
+	1    6100 2450
+	1 0 0 -1
+$EndComp
+Wire Wire Line
+	6100 2300 6100 2150
+Wire Wire Line
+	6100 2150 6250 2150
+Connection ~ 6250 2150
+Text Label 6100 2750 0 50 ~ 0
+GND
+Wire Wire Line
+	6100 2600 6100 2750
+Text Notes 6500 2850 0 50 ~ 0
+Gain = 1 + 4.7k/10k = 1.47
+Text Label 6650 1650 0 50 ~ 0
++15V
+Text Label 6650 2450 2 50 ~ 0
+-15V
+
+$Comp
+L Device:R R7
+U 1 1 1401
+P 9000 1950
+F 0 "R7" V 8793 1950 50 0000 C CNN
+F 1 "100k" V 8884 1950 50 0000 C CNN
+	1    9000 1950
+	0 1 1 0
+$EndComp
+Wire Wire Line
+	7550 2050 8300 2050
+Wire Wire Line
+	8300 2050 8300 1950
+Wire Wire Line
+	8300 1950 8850 1950
+Wire Wire Line
+	9150 1950 9900 1950
+$Comp
+L Device:R R8
+U 1 1 1402
+P 9600 1650
+F 0 "R8" H 9670 1696 50 0000 L CNN
+F 1 "100k" H 9670 1605 50 0000 L CNN
+	1    9600 1650
+	1 0 0 -1
+$EndComp
+Wire Wire Line
+	9600 1800 9600 1950
+Wire Wire Line
+	9600 1950 9900 1950
+Connection ~ 9600 1950
+Text Label 9600 1400 0 50 ~ 0
+GND
+Wire Wire Line
+	9600 1500 9600 1400
+
+$Comp
+L Device:R R9
+U 1 1 1403
+P 9000 2150
+F 0 "R9" V 9100 2150 50 0000 C CNN
+F 1 "100k" V 9200 2150 50 0000 C CNN
+	1    9000 2150
+	0 1 1 0
+$EndComp
+Text Label 8300 2150 0 50 ~ 0
+WIPER
+Wire Wire Line
+	8300 2150 8850 2150
+Wire Wire Line
+	9150 2150 9900 2150
+
+$Comp
+L Amplifier_Operational:LM741 U3
+U 1 1 1203
+P 10200 2050
+F 0 "U3" H 10544 2096 50 0000 L CNN
+F 1 "LM741" H 10544 2005 50 0000 L CNN
+	1    10200 2050
+	1 0 0 -1
+$EndComp
+Wire Wire Line
+	10500 2050 11250 2050
+Text Label 10700 2050 0 50 ~ 0
+COMMAND
+$Comp
+L Device:R R10
+U 1 1 1404
+P 10200 2500
+F 0 "R10" V 9993 2500 50 0000 C CNN
+F 1 "100k" V 10084 2500 50 0000 C CNN
+	1    10200 2500
+	0 1 1 0
+$EndComp
+Wire Wire Line
+	9900 2150 9700 2150
+Wire Wire Line
+	9700 2150 9700 2500
+Wire Wire Line
+	9700 2500 10050 2500
+Wire Wire Line
+	10350 2500 10900 2500
+Wire Wire Line
+	10900 2500 10900 2050
+Connection ~ 10900 2050
+Text Label 10100 1650 0 50 ~ 0
++15V
+Text Label 10100 2450 2 50 ~ 0
+-15V
+Text Notes 9900 2850 0 50 ~ 0
+VCOMMAND ≈ 2.5 + 0.0143(VREF − VSENSE)
+
+$Comp
+L Connector_Generic:Conn_01x02 J2
+U 1 1 1501
+P 12150 2050
+F 0 "J2" H 12230 2042 50 0000 L CNN
+F 1 "DAQ MONITOR" H 12230 1951 50 0000 L CNN
+	1    12150 2050
+	1 0 0 -1
+$EndComp
+Wire Wire Line
+	11250 2050 11950 2050
+Text Notes 12250 2050 0 50 ~ 0
+ADC-1: command output
+Text Label 11400 2050 0 50 ~ 0
+COMMAND
+Text Label 11400 2150 0 50 ~ 0
+VSENSE
+Wire Wire Line
+	11400 2150 11950 2150
+Text Notes 12250 2250 0 50 ~ 0
+ADC-2: sensor monitor
+
+Text Notes 1750 3550 0 70 ~ 14
+BIAS POTENTIOMETER (NO BUFFER)
+$Comp
+L Device:R R11
+U 1 1 1601
+P 3000 4050
+F 0 "R11" H 3070 4096 50 0000 L CNN
+F 1 "3.9k" H 3070 4005 50 0000 L CNN
+	1    3000 4050
+	1 0 0 -1
+$EndComp
+Text Label 3000 3750 0 50 ~ 0
+GND
+Wire Wire Line
+	3000 3750 3000 3900
+Wire Wire Line
+	3000 4200 3000 4400
+Text Label 3000 4400 0 50 ~ 0
+BIAS_TOP
+
+$Comp
+L Device:R_Potentiometer P1
+U 1 1 1602
+P 3000 4850
+F 0 "P1" H 2930 4896 50 0000 R CNN
+F 1 "10k" H 2930 4805 50 0000 R CNN
+	1    3000 4850
+	1 0 0 -1
+$EndComp
+Wire Wire Line
+	3000 4700 3000 4400
+Wire Wire Line
+	3000 5000 3000 5300
+Text Label 3000 5300 0 50 ~ 0
+BIAS_BOT
+Wire Wire Line
+	3150 4850 3900 4850
+Text Label 3400 4850 0 50 ~ 0
+WIPER
+
+$Comp
+L Device:R R12
+U 1 1 1603
+P 2450 4850
+F 0 "R12" H 2520 4896 50 0000 L CNN
+F 1 "1.2k" H 2520 4805 50 0000 L CNN
+	1    2450 4850
+	1 0 0 -1
+$EndComp
+Wire Wire Line
+	2450 4700 2450 4400
+Wire Wire Line
+	2450 4400 3000 4400
+Connection ~ 3000 4400
+Wire Wire Line
+	2450 5000 2450 5300
+Wire Wire Line
+	2450 5300 3000 5300
+Connection ~ 3000 5300
+
+$Comp
+L Device:R R13
+U 1 1 1604
+P 3000 5650
+F 0 "R13" H 3070 5696 50 0000 L CNN
+F 1 "22k" H 3070 5605 50 0000 L CNN
+	1    3000 5650
+	1 0 0 -1
+$EndComp
+Wire Wire Line
+	3000 5300 3000 5500
+Text Label 3000 5950 0 50 ~ 0
+-15V
+Wire Wire Line
+	3000 5800 3000 5950
+
+Text Notes 4200 4250 0 60 ~ 12
+CALIBRATION
+Text Notes 4200 4500 0 50 ~ 0
+1. Set DAC-1 = DAC-0 (example: both 4.650 V).
+Text Notes 4200 4750 0 50 ~ 0
+2. Adjust P1 until ADC-1 reads +2.500 V.
+Text Notes 4200 5000 0 50 ~ 0
+3. Keep P1 fixed during tracking.
+Text Notes 4200 5250 0 50 ~ 0
+R12 = 1.2 kΩ is connected across the full 10 kΩ pot.
+Text Notes 4200 5500 0 50 ~ 0
+Wiper feeds R9 → U3 inverting input.
+
+Text Notes 8100 3650 0 70 ~ 14
+POWER AND DECOUPLING
+$Comp
+L Connector_Generic:Conn_01x03 J3
+U 1 1 1701
+P 8450 4150
+F 0 "J3" H 8368 4467 50 0000 C CNN
+F 1 "BENCH SUPPLY" H 8368 4376 50 0000 C CNN
+	1    8450 4150
+	-1 0 0 -1
+$EndComp
+Text Label 8750 4050 0 50 ~ 0
++15V
+Text Label 8750 4150 0 50 ~ 0
+GND
+Text Label 8750 4250 0 50 ~ 0
+-15V
+Wire Wire Line
+	8650 4050 9200 4050
+Wire Wire Line
+	8650 4150 9200 4150
+Wire Wire Line
+	8650 4250 9200 4250
+
+$Comp
+L Device:C C1
+U 1 1 1801
+P 9850 4150
+F 0 "C1" H 9965 4196 50 0000 L CNN
+F 1 "100n" H 9965 4105 50 0000 L CNN
+	1    9850 4150
+	1 0 0 -1
+$EndComp
+Text Label 9850 3900 0 50 ~ 0
++15V
+Text Label 9850 4400 0 50 ~ 0
+GND
+Wire Wire Line
+	9850 3900 9850 4000
+Wire Wire Line
+	9850 4300 9850 4400
+$Comp
+L Device:C C2
+U 1 1 1802
+P 10500 4150
+F 0 "C2" H 10615 4196 50 0000 L CNN
+F 1 "100n" H 10615 4105 50 0000 L CNN
+	1    10500 4150
+	1 0 0 -1
+$EndComp
+Text Label 10500 3900 0 50 ~ 0
+-15V
+Text Label 10500 4400 0 50 ~ 0
+GND
+Wire Wire Line
+	10500 3900 10500 4000
+Wire Wire Line
+	10500 4300 10500 4400
+Text Notes 9750 4650 0 50 ~ 0
+U1 decoupling
+
+$Comp
+L Device:C C3
+U 1 1 1803
+P 11400 4150
+F 0 "C3" H 11515 4196 50 0000 L CNN
+F 1 "100n" H 11515 4105 50 0000 L CNN
+	1    11400 4150
+	1 0 0 -1
+$EndComp
+Text Label 11400 3900 0 50 ~ 0
++15V
+Text Label 11400 4400 0 50 ~ 0
+GND
+Wire Wire Line
+	11400 3900 11400 4000
+Wire Wire Line
+	11400 4300 11400 4400
+$Comp
+L Device:C C4
+U 1 1 1804
+P 12050 4150
+F 0 "C4" H 12165 4196 50 0000 L CNN
+F 1 "100n" H 12165 4105 50 0000 L CNN
+	1    12050 4150
+	1 0 0 -1
+$EndComp
+Text Label 12050 3900 0 50 ~ 0
+-15V
+Text Label 12050 4400 0 50 ~ 0
+GND
+Wire Wire Line
+	12050 3900 12050 4000
+Wire Wire Line
+	12050 4300 12050 4400
+Text Notes 11300 4650 0 50 ~ 0
+U2 decoupling
+
+$Comp
+L Device:C C5
+U 1 1 1805
+P 13000 4150
+F 0 "C5" H 13115 4196 50 0000 L CNN
+F 1 "100n" H 13115 4105 50 0000 L CNN
+	1    13000 4150
+	1 0 0 -1
+$EndComp
+Text Label 13000 3900 0 50 ~ 0
++15V
+Text Label 13000 4400 0 50 ~ 0
+GND
+Wire Wire Line
+	13000 3900 13000 4000
+Wire Wire Line
+	13000 4300 13000 4400
+$Comp
+L Device:C C6
+U 1 1 1806
+P 13650 4150
+F 0 "C6" H 13765 4196 50 0000 L CNN
+F 1 "100n" H 13765 4105 50 0000 L CNN
+	1    13650 4150
+	1 0 0 -1
+$EndComp
+Text Label 13650 3900 0 50 ~ 0
+-15V
+Text Label 13650 4400 0 50 ~ 0
+GND
+Wire Wire Line
+	13650 3900 13650 4000
+Wire Wire Line
+	13650 4300 13650 4400
+Text Notes 12900 4650 0 50 ~ 0
+U3 decoupling
+
+Text Notes 8100 5200 0 60 ~ 12
+741 PIN / WIRING NOTES
+Text Notes 8100 5450 0 50 ~ 0
+Pin 7 = +15 V; pin 4 = −15 V.
+Text Notes 8100 5700 0 50 ~ 0
+Pins 1 and 5 (offset null) and pin 8 (NC) are left unconnected.
+Text Notes 8100 5950 0 50 ~ 0
+Use common ground between bench supply and DAQ.
+Text Notes 8100 6200 0 50 ~ 0
+Place each 100 nF capacitor physically close to its op-amp supply pin.
+
+Text Notes 1750 6800 0 70 ~ 14
+FUNCTIONAL SUMMARY
+Text Notes 1750 7100 0 55 ~ 0
+U1 forms a difference amplifier with matched 100k/1k ratios: U1_OUT = 0.01(VREF − VSENSE).
+Text Notes 1750 7400 0 55 ~ 0
+U2 is non-inverting: gain = 1 + R5/R6 = 1.47.
+Text Notes 1750 7700 0 55 ~ 0
+U3 combines U2 output with the calibrated bias. With P1 set correctly, VCOMMAND ≈ 2.5 + Kp(VREF − VSENSE).
+Text Notes 1750 8000 0 55 ~ 0
+Nominal component values produce Kp ≈ 0.0143 V/V in the complete loaded circuit.
+
+$EndSCHEMATC
+
+
+================================================================================
+FILE: main.tex
+================================================================================
+% Root entry point for Overleaf or latexmk from the project root.
+\def\ReportRoot{report/}
+\def\ProjectRoot{}
+\input{report/main.tex}
+
+
+================================================================================
+FILE: matlab/build_simulink_model.m
+================================================================================
+% Launch the Simulink model builder; no DAQ hardware is required.
+clear; clc;
+addpath(genpath(fileparts(mfilename('fullpath'))));
+model = create_simulink_model(lab_parameters());
+
+
+================================================================================
+FILE: matlab/config/lab_parameters.m
+================================================================================
+function P = lab_parameters()
+% One shared parameter file for Python and MATLAB.
+projectRoot = fileparts(fileparts(fileparts(mfilename('fullpath'))));
+P = jsondecode(fileread(fullfile(projectRoot,'config','lab_parameters.json')));
+P.project_root = projectRoot;
+end
+
+
+================================================================================
+FILE: matlab/design/run_root_locus_design.m
+================================================================================
+function result = run_root_locus_design(P)
+% Detailed root locus method and response checks. Requires Control System Toolbox.
+%% 1. Adopt exactly the model and gain in the saved report
+A = P.A;                 % Velocity DC gain, m/(s V)
+tau = P.tau_s;                   % Velocity time constant, s
+ks = P.sensor_gain_V_per_m;                   % Sensor gain, V/m
+Kp = P.controller_gain;                % Report controller voltage-error gain, V/V
+hoverV = P.hover_command_V;                % Equilibrium actuator command, V
+reference_m = P.reference_step_m;             % Report nominal reference: 0 to 5 m
+identificationDeltaU_V = P.identification_step_V; % Identification input: 2.5 to 5.0 V
+% The identification actuator step and closed-loop position reference have
+% different units. Do not substitute the 2.5 V identification step for 5 m.
+b = 1/tau;
+kT = A/tau;
+s = tf('s');
+Gpos = A/(s*(tau*s + 1));
+G0 = ks*Gpos;                % Exclude Kp: rlocus varies this multiplier
+L = Kp*G0;
+T = feedback(L,1);          % y/reference; equivalent sensor-scaled loop
+outDir = fullfile(P.project_root,'results','matlab','root_locus');
+if ~exist(outDir,'dir'), mkdir(outDir); end
+diary(fullfile(outDir,'root_locus_calculations.txt'));
+fprintf('REPORT MODEL: A=%.4f, tau=%.1f, ks=%.2f, Kp=%.5f\n',A,tau,ks,Kp);
+fprintf('Identification actuator increment: %.1f V; position reference: %.1f m\n',...
+    identificationDeltaU_V,reference_m);
+disp('G0(s), with sensor gain but without the variable Kp:'); disp(G0);
+
+%% 2. Open-loop poles, real-axis section, centroid and breakaway
+% Poles: 0 and -1/tau. There are no finite zeros.
+% Real-axis locus: [-1/tau,0]. Two asymptotes: +90 and -90 degrees.
+% Kp(s) = -s*(tau*s+1)/(A*ks).
+% dKp/ds = -(2*tau*s+1)/(A*ks) = 0 at sb = -1/(2*tau).
+openPoles = pole(G0);
+openZeros = zero(G0);
+sb = -1/(2*tau);
+Kbreak = 1/(4*tau*A*ks);
+fprintf('\nOpen-loop poles:\n'); disp(openPoles);
+fprintf('Number of finite zeros: %d\n',numel(openZeros));
+fprintf('Centroid and breakaway pole: %.9f 1/s\n',sb);
+fprintf('Breakaway gain: %.9f\n',Kbreak);
+
+%% 3. Convert the 30%% overshoot limit into a damping/gain limit
+MpLimit = 0.30;              % Fraction, not percentage
+zetaMin = -log(MpLimit)/sqrt(pi^2 + log(MpLimit)^2);
+% Characteristic polynomial: tau*s^2+s+A*ks*Kp = 0.
+% wn = sqrt(A*ks*Kp/tau); zeta = 1/(2*sqrt(tau*A*ks*Kp)).
+KmaxNominal = 1/(4*tau*A*ks*zetaMin^2);
+% For aerodynamic uncertainty, vary b while kT stays fixed.
+% Scalar gain tolerance models overall gain only, not resistor mismatch.
+KmaxJointScalar = (0.9*b)^2/(4*kT*ks*zetaMin^2*1.1);
+fprintf('\nMinimum damping ratio for <30%% overshoot: %.9f\n',zetaMin);
+fprintf('Nominal overshoot limit: 0 < Kp < %.9f\n',KmaxNominal);
+fprintf('Joint +/-10%% drag/gain limit: Kp < %.9f\n',KmaxJointScalar);
+
+%% 4. Calculate the selected closed-loop pole pair
+q = A*ks*Kp;
+selectedPoles = roots([tau 1 q]);
+wn = sqrt(q/tau);
+sigma = 1/(2*tau);
+zeta = sigma/wn;
+wd = sqrt(wn^2-sigma^2);
+MpAnalytic = 100*exp(-pi*zeta/sqrt(1-zeta^2));
+tp = pi/wd;
+TsApprox = 4/sigma;          % Standard 2%% settling approximation
+TsEnvelope = -log(0.02*sqrt(1-zeta^2))/sigma;
+fprintf('\nCharacteristic polynomial: %.1f*s^2+s+%.9f = 0\n',tau,q);
+fprintf('Selected poles:\n'); disp(selectedPoles);
+fprintf('wn=%.9f rad/s; zeta=%.9f; wd=%.9f rad/s\n',wn,zeta,wd);
+fprintf('Analytic overshoot=%.6f%%; peak time=%.6f s\n',MpAnalytic,tp);
+fprintf('4/sigma approximation=%.6f s; 2%% envelope bound=%.6f s\n',...
+    TsApprox,TsEnvelope);
+
+%% 5. Check the root locus angle and magnitude conditions
+sd = complex(-sigma,wd);     % Upper selected pole
+theta1 = atan2d(imag(sd),real(sd));
+theta2 = atan2d(imag(sd),real(sd)+b);
+GatPole = evalfr(G0,sd);
+angleGdeg = angle(GatPole)*180/pi;
+KfromMagnitude = 1/abs(GatPole);
+KfromDistances = abs(sd)*abs(sd+b)/(kT*ks);
+charResidual = abs(tau*sd^2+sd+q);
+fprintf('\nAngle from pole 0 = %.6f degrees\n',theta1);
+fprintf('Angle from pole -1/tau = %.6f degrees\n',theta2);
+fprintf('Pole angle sum=%.6f degrees; angle G0(sd)=%.6f degrees\n',...
+    theta1+theta2,angleGdeg);
+fprintf('Magnitude gain 1/|G0(sd)| = %.9f\n',KfromMagnitude);
+fprintf('Pole-distance gain = %.9f; characteristic residual = %.3g\n',...
+    KfromDistances,charResidual);
+
+%% 6. Plot the root locus and the specification boundaries
+gainVector = linspace(0,0.04,2001);
+r = rlocus(G0,gainVector);   % Each column corresponds to one gain
+angelBlue = [143 201 230]/255;
+darkBlue = [57 123 156]/255;
+f1 = figure('Color','w');
+plot(real(r(1,:)),imag(r(1,:)),'Color',darkBlue,'LineWidth',1.8);
+hold on;
+plot(real(r(2,:)),imag(r(2,:)),'Color',darkBlue,'LineWidth',1.8,...
+    'HandleVisibility','off');
+plot(real(openPoles),imag(openPoles),'kx','MarkerSize',10,'LineWidth',2);
+plot(real(selectedPoles),imag(selectedPoles),'o','Color',[0.85 0.35 0.12],...
+    'MarkerFaceColor',[0.85 0.35 0.12],'MarkerSize',7);
+plot(sb,0,'ks','MarkerFaceColor',angelBlue,'MarkerSize',7);
+xline(sb,':','Fixed complex-pole real part','Color',[0.2 0.5 0.3]);
+x = linspace(-0.18,0,200);
+slope = sqrt(1-zetaMin^2)/zetaMin;
+plot(x,-x*slope,'--','Color',[0.5 0.5 0.5]);
+plot(x,x*slope,'--','Color',[0.5 0.5 0.5],'HandleVisibility','off');
+TsTarget = 30;
+sigmaTarget = 4/TsTarget;
+xline(-sigmaTarget,'--','30 s approximate settling boundary',...
+    'Color',[0.7 0.2 0.2]);
+grid on; xlabel('Real part (1/s)'); ylabel('Imaginary part (1/s)');
+title(sprintf('Kitticopter root locus: Kp = %.5f',Kp));
+xlim([-0.18 0.015]); ylim([-0.30 0.30]);
+exportgraphics(f1,fullfile(outDir,'root_locus.png'),'Resolution',200);
+exportgraphics(f1,fullfile(outDir,'root_locus.pdf'),'ContentType','vector');
+fprintf('\n30 s design line: Re(s) <= %.9f\n',-sigmaTarget);
+fprintf('Available complex-pole real part: %.9f\n',sb);
+fprintf(['The standard 30 s decay-rate target is outside this P-only locus.\n'...
+    'This line uses Ts approximately 4/sigma; the exact response is checked next.\n']);
+
+%% 7. Verify the step response and report-compatible settling time
+t = (0:0.005:160)';
+y = reference_m*step(T,t);
+info = stepinfo(y,t,reference_m,'SettlingTimeThreshold',0.02);
+% Also reproduce the report's sampled final-entry definition explicitly.
+outside = find(abs(y-reference_m)>0.02*reference_m);
+if isempty(outside)
+    TsSampled = 0;
+elseif outside(end)==numel(t)
+    TsSampled = NaN;          % Not settled within the simulated interval
+else
+    TsSampled = t(outside(end)+1);
+end
+u = hoverV+Kp*ks*(reference_m-y);
+steadyGain = dcgain(T);
+fprintf('\nMATLAB stepinfo results:\n'); disp(info);
+fprintf('Sampled last-entry 2%% settling time=%.6f s\n',TsSampled);
+fprintf('DC tracking gain=%.9f; ideal step tracking error=%.9f%%\n',...
+    steadyGain,100*abs(1-steadyGain));
+fprintf('Command range=%.6f to %.6f V\n',min(u),max(u));
+f2 = figure('Color','w');
+subplot(2,1,1);
+plot(t,y,'Color',darkBlue,'LineWidth',1.5); hold on;
+yline(reference_m,'k--','Reference');
+yline(0.98*reference_m,':','2% lower bound');
+yline(1.02*reference_m,':','2% upper bound');
+grid on; ylabel('Position (m)'); title('Report nominal 0 to 5 m response');
+subplot(2,1,2);
+plot(t,u,'Color',[0.85 0.35 0.12],'LineWidth',1.5); hold on;
+yline(hoverV,':','Hover command'); grid on;
+xlabel('Time from reference step (s)'); ylabel('Actuator command (V)');
+exportgraphics(f2,fullfile(outDir,'nominal_response.png'),'Resolution',200);
+writetable(table(t,y,u,'VariableNames',{'time_s','position_m','command_V'}),...
+    fullfile(outDir,'nominal_response.csv'));
+
+%% 8. Aerodynamic constant uncertainty: b times 0.9, 1.0 and 1.1
+% With kT fixed, tau'=1/b' and A'=kT/b': do not vary tau alone.
+f3 = figure('Color','w'); hold on; grid on;
+for bf = [0.9 1.0 1.1]
+    Tb = tf(kT*Kp*ks,[1 bf*b kT*Kp*ks]);
+    yb = reference_m*step(Tb,t);
+    ib = stepinfo(yb,t,reference_m,'SettlingTimeThreshold',0.02);
+    plot(t,yb,'LineWidth',1.4,'DisplayName',sprintf('b x %.1f',bf));
+    fprintf('b x %.1f: overshoot %.6f%%; stepinfo settling %.6f s\n',...
+        bf,ib.Overshoot,ib.SettlingTime);
+end
+yline(reference_m,'k--','HandleVisibility','off'); legend('Location','best');
+xlabel('Time (s)'); ylabel('Position (m)'); title('Aerodynamic uncertainty');
+exportgraphics(f3,fullfile(outDir,'aerodynamic_uncertainty.png'),'Resolution',200);
+
+%% 9. Joint scalar gain and drag uncertainty: four corners
+% Independent circuit-resistor tolerance is NOT covered by these four cases.
+% The original analysis/analyse.py evaluates 2,048 resistor/drag corners.
+cornerResults = zeros(4,4);
+row = 0;
+for bf = [0.9 1.1]
+    for kf = [0.9 1.1]
+        row = row+1;
+        Tc = tf(kT*(kf*Kp)*ks,[1 bf*b kT*(kf*Kp)*ks]);
+        yc = reference_m*step(Tc,t);
+        ic = stepinfo(yc,t,reference_m,'SettlingTimeThreshold',0.02);
+        cornerResults(row,:) = [bf kf ic.Overshoot ic.SettlingTime];
+    end
+end
+cornerTable = array2table(cornerResults,'VariableNames',...
+    {'drag_factor','gain_factor','overshoot_percent','settling_time_s'});
+disp('Joint scalar uncertainty results:'); disp(cornerTable);
+writetable(cornerTable,fullfile(outDir,'joint_scalar_corners.csv'));
+fprintf('Largest scalar-corner overshoot: %.6f%%\n',max(cornerResults(:,3)));
+fprintf('Detailed independent component tolerance: run analysis/analyse.py.\n');
+diary off;
+fprintf('\nFigures, tables and calculation log saved in:\n%s\n',outDir);
+
+result = struct("gain",Kp,"poles",selectedPoles,"damping_ratio",zeta,...
+    "overshoot_percent",MpAnalytic,"settling_time_s",TsSampled);
+end
+
+
+================================================================================
+FILE: matlab/identification/identify_session1.m
+================================================================================
+function result = identify_session1(P)
+% Identify gain, time constant and sensor gain from the original Session 1 CSV.
+% This is a MATLAB equivalent; report estimates are generated by Python.
+raw = readmatrix(fullfile(P.project_root,'data','session1','PTRJUN003_raw.csv'));
+resetIndex = find(diff(raw(:,1)) < 0,1,'last');
+if ~isempty(resetIndex), raw = raw(resetIndex+1:end,:); end
+t = raw(:,1); u = raw(:,2); sensor = raw(:,3); y = raw(:,4);
+v = [NaN; diff(y)./diff(t)];
+vInf = mean(v(t >= 120));
+A = vInf/P.identification_step_V;
+target = 0.632*vInf;
+i = find(v >= target,1,'first');
+t63 = t(i-1)+(target-v(i-1))/(v(i)-v(i-1))*(t(i)-t(i-1));
+tau = t63-15.9;
+validSensor = sensor>0 & sensor<9.9 & y>0;
+ks = sum(y(validSensor).*sensor(validSensor))/sum(y(validSensor).^2);
+result = struct('velocity_final_m_per_s',vInf,'A',A,'time_constant_s',tau,...
+    'sensor_gain_V_per_m',ks,'retained_rows',numel(t));
+disp('Session 1 estimates:'); disp(result);
+figure('Color','w'); subplot(2,1,1); plot(t,u); grid on;
+ylabel('Input (V)'); title('Retained Session 1 run');
+subplot(2,1,2); plot(t-15.9,v); hold on;
+modelV = P.A*P.identification_step_V*(1-exp(-max(t-15.9,0)/P.tau_s));
+plot(t-15.9,modelV,'--'); grid on;
+xlabel('Time from step (s)'); ylabel('Velocity (m/s)');
+legend('Position backward difference','Adopted model');
+end
+
+
+================================================================================
+FILE: matlab/root_locus_design.m
+================================================================================
+% Run the detailed root locus method. Requires Control System Toolbox.
+clear; close all; clc;
+addpath(genpath(fileparts(mfilename('fullpath'))));
+P = lab_parameters();
+root_locus_result = run_root_locus_design(P);
+
+
+================================================================================
+FILE: matlab/run_all.m
+================================================================================
+% Run Session 1 identification and the proportional-controller checks.
+% Requires Control System Toolbox. Simulink is optional.
+clear; close all; clc;
+addpath(genpath(fileparts(mfilename('fullpath'))));
+P = lab_parameters();
+identification_result = identify_session1(P);
+root_locus_result = run_root_locus_design(P);
+verify_nominal_controller(P);
+if license('test','Simulink')
+    model = create_simulink_model(P);
+    disp('Simulink model built. Run sim(model) when required.');
+end
+
+
+================================================================================
+FILE: matlab/simulink/create_simulink_model.m
+================================================================================
+function model = create_simulink_model(P)
+% Reconstruct the nominal architecture; requires Simulink.
+model='PTRJUN003_Kitticopter_Lab2';
+if bdIsLoaded(model), close_system(model,0); end
+new_system(model); open_system(model);
+set_param(model,'StopTime','160','Solver','ode45','MaxStep','0.02',...
+    'RelTol','1e-8','AbsTol','1e-10');
+add_block('simulink/Sources/Step',[model '/Reference_m'],...
+ 'Time','0','Before','0','After',num2str(P.reference_step_m),'Position',[25 65 55 95]);
+add_block('simulink/Math Operations/Gain',[model '/ReferenceSensorGain'],...
+ 'Gain',num2str(P.sensor_gain_V_per_m),'Position',[95 60 145 100]);
+add_block('simulink/Math Operations/Sum',[model '/VoltageError'],...
+ 'Inputs','+-','Position',[190 65 215 95]);
+add_block('simulink/Math Operations/Gain',[model '/Kp'],...
+ 'Gain',num2str(P.controller_gain),'Position',[255 60 310 100]);
+add_block('simulink/Math Operations/Sum',[model '/AddHover'],...
+ 'Inputs','++','Position',[355 65 380 95]);
+add_block('simulink/Sources/Constant',[model '/Hover'],...
+ 'Value',num2str(P.hover_command_V),'Position',[310 175 345 205]);
+add_block('simulink/Discontinuities/Saturation',[model '/ActuatorLimits'],...
+ 'UpperLimit','5','LowerLimit','0','Position',[420 60 465 100]);
+add_block('simulink/Math Operations/Sum',[model '/SubtractHover'],...
+ 'Inputs','+-','Position',[505 65 530 95]);
+add_block('simulink/Continuous/Transfer Fcn',[model '/VelocityPlant'],...
+ 'Numerator',num2str(P.A),'Denominator',mat2str([P.tau_s 1]),...
+ 'Position',[565 60 655 100]);
+add_block('simulink/Continuous/Integrator',[model '/Position'],...
+ 'InitialCondition','0','Position',[695 60 730 100]);
+add_block('simulink/Math Operations/Gain',[model '/SensorGain'],...
+ 'Gain',num2str(P.sensor_gain_V_per_m),'Position',[565 280 620 315]);
+add_block('simulink/Discontinuities/Saturation',[model '/SensorLimits'],...
+ 'UpperLimit','10','LowerLimit','0','Position',[430 280 475 315]);
+set_param([model '/SensorGain'],'Orientation','left');
+set_param([model '/SensorLimits'],'Orientation','left');
+add_block('simulink/Sinks/To Workspace',[model '/OutputLog'],...
+ 'VariableName','altitude_m','SaveFormat','Timeseries','Position',[785 55 885 90]);
+add_block('simulink/Sinks/To Workspace',[model '/CommandLog'],...
+ 'VariableName','command_v','SaveFormat','Timeseries','Position',[475 170 575 205]);
+add_block('simulink/Sinks/Scope',[model '/Scope'],...
+ 'NumInputPorts','3','Position',[915 110 960 190]);
+connections={ 'Reference_m/1','ReferenceSensorGain/1';
+ 'ReferenceSensorGain/1','VoltageError/1';
+ 'VoltageError/1','Kp/1'; 'Kp/1','AddHover/1';
+ 'Hover/1','AddHover/2'; 'AddHover/1','ActuatorLimits/1';
+ 'ActuatorLimits/1','SubtractHover/1'; 'Hover/1','SubtractHover/2';
+ 'SubtractHover/1','VelocityPlant/1'; 'VelocityPlant/1','Position/1';
+ 'Position/1','SensorGain/1'; 'SensorGain/1','SensorLimits/1';
+ 'SensorLimits/1','VoltageError/2'; 'Position/1','OutputLog/1';
+ 'ActuatorLimits/1','CommandLog/1';'Reference_m/1','Scope/1';
+ 'Position/1','Scope/2'; 'ActuatorLimits/1','Scope/3'};
+for i=1:size(connections,1)
+ add_line(model,connections{i,1},connections{i,2},'autorouting','on');
+end
+target=fullfile(P.project_root,'results','matlab');
+if ~exist(target,'dir'), mkdir(target); end
+save_system(model,fullfile(target,[model '.slx']));
+disp('Model saved. Run sim(model) to generate logged nominal response.');
+
+end
+
+
+================================================================================
+FILE: matlab/validation/verify_nominal_controller.m
+================================================================================
+function verify_nominal_controller(P)
+% Original independent report check, using the shared parameters.
+A=P.A; tau=P.tau_s; ks=P.sensor_gain_V_per_m; Kp=P.controller_gain;
+b=1/tau; kT=A/tau;
+s=tf('s'); Gy=A/(s*(tau*s+1));
+L=Kp*ks*Gy; T=feedback(L,1);
+t=(0:0.005:160)'; y=5*step(T,t);
+wn=sqrt(A*Kp*ks/tau); zeta=1/(2*sqrt(tau*A*Kp*ks));
+wd=wn*sqrt(1-zeta^2);
+fprintf('Poles:'); disp(pole(T));
+fprintf('zeta=%.7f, wn=%.7f, wd=%.7f\n',zeta,wn,wd);
+fprintf('Analytic Mp=%.6f%%, tp=%.6f s\n',100*exp(-pi*zeta/sqrt(1-zeta^2)),pi/wd);
+info=stepinfo(y,t,5,'SettlingTimeThreshold',0.02);
+disp(info);
+u=2.5+Kp*ks*(5-y);
+assert(all(u>=0 & u<=5),'Nominal command is outside 0-5 V');
+figure; rlocus(ks*Gy); grid on; hold on;
+plot(real(pole(T)),imag(pole(T)),'ro','MarkerFaceColor','r');
+title('Proportional root locus; sensor gain included');
+xline(-1/(2*tau),'--','Fixed complex-pole real part');
+figure; subplot(2,1,1);plot(t,y,t,5*ones(size(t)),'--');
+yline(4.9,':');yline(5.1,':'); ylabel('Position (m)');grid on;
+subplot(2,1,2);plot(t,u);ylabel('Command (V)');xlabel('Time (s)');grid on;
+figure; hold on;
+for bf=[0.9 1 1.1]
+ Tb=tf(kT*Kp*ks,[1 bf*b kT*Kp*ks]);
+ yb=5*step(Tb,t);ib=stepinfo(yb,t,5,'SettlingTimeThreshold',0.02);
+ fprintf('b x %.1f: Mp %.5f%%, Ts %.5f s\n',bf,ib.Overshoot,ib.SettlingTime);
+ plot(t,yb,'DisplayName',sprintf('b x %.1f',bf));
+end
+legend;grid on; xlabel('Time (s)');ylabel('Position (m)');
+fprintf('Joint scalar worst Mp: ');
+Tw=tf(kT*(1.1*Kp)*ks,[1 .9*b kT*(1.1*Kp)*ks]);
+iw=stepinfo(5*step(Tw,t),t,5,'SettlingTimeThreshold',0.02);disp(iw.Overshoot);
+
+end
+
+
+================================================================================
+FILE: matlab/verify_controller.m
+================================================================================
+% Launch the original independent controller check.
+clear; close all; clc;
+addpath(genpath(fileparts(mfilename('fullpath'))));
+verify_nominal_controller(lab_parameters());
+
+
+================================================================================
+FILE: report/main.tex
+================================================================================
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage[top=1in,bottom=1in,left=1in,right=1in,headheight=15pt]{geometry}
+\usepackage{microtype,amsmath,amssymb,graphicx,booktabs,array,tabularx,float}
+\usepackage[table]{xcolor}
+\usepackage{tikz,circuitikz,fancyhdr,enumitem,listings,caption}
+\usetikzlibrary{arrows.meta,positioning,calc}
+\definecolor{AngelBlue}{HTML}{8FC9E6}
+\definecolor{LinkBlue}{HTML}{397B9C}
+\colorlet{navy}{LinkBlue}
+\usepackage[unicode,colorlinks=true,linkcolor=LinkBlue,urlcolor=LinkBlue,citecolor=LinkBlue,bookmarksnumbered=true]{hyperref}
+\hypersetup{pdftitle={EEE3094S Lab 2: Proportional Control},pdfauthor={Junaid Allan Pieters},pdfsubject={Kitticopter modelling, identification and proportional control}}
+\providecommand{\ReportRoot}{}
+\providecommand{\ProjectRoot}{../}
+\graphicspath{{\ReportRoot figures/}}
+% Computer Modern, margins and leading follow the supplied LaTeX template.
+\linespread{1.06}
+\setlength{\parskip}{8pt plus2pt minus2pt}
+\widowpenalty=10000\clubpenalty=10000
+\setlist{nosep,leftmargin=*}
+\renewcommand{\arraystretch}{1.14}
+\captionsetup{font=small,labelfont=bf,skip=5pt}
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[R]{\small\nouppercase{\leftmark}}\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\numberwithin{equation}{section}
+\makeatletter
+\renewcommand{\@pnumwidth}{2.2em}
+\renewcommand{\@tocrmarg}{3.2em}
+\makeatother
+\counterwithin{figure}{section}\counterwithin{table}{section}
+\newcommand{\HRule}{\textcolor{AngelBlue}{\rule{\linewidth}{0.5mm}}}
+\newcommand{\fig}[4]{\begin{figure}[H]\centering\includegraphics[width=#2\linewidth]{#1}\caption{#3}\label{#4}\end{figure}}
+\newcommand{\page}{\clearpage}
+\newcommand{\unit}[1]{\,\mathrm{#1}}
+\newcommand{\Fref}[1]{\hyperref[#1]{Figure~\ref*{#1}}}
+\newcommand{\Tref}[1]{\hyperref[#1]{Table~\ref*{#1}}}
+\newcommand{\Aref}[1]{\hyperref[#1]{Appendix~\ref*{#1}}}
+\newcommand{\Sref}[1]{\hyperref[#1]{Section~\ref*{#1}}}
+\newcommand{\Eref}[1]{\hyperref[#1]{Equation~(\ref*{#1})}}
+\newcommand{\thead}{\rowcolor{AngelBlue!28}}
+\input{\ReportRoot repository.tex}
+\begin{document}
+\hypersetup{pageanchor=false}
+\begin{titlepage}\thispagestyle{empty}\begin{center}
+\includegraphics[width=0.3\textwidth]{UCTLOGO.png}\\[2cm]
+\HRule\\[0.4cm]
+{\LARGE\textbf{Lab 2 Report}\\[0.4cm]\emph{Proportional Control}\\[0.4cm]}
+\HRule\\[1.5cm]
+{\large Junaid Allan Pieters\\[0.2cm]EEE3094S Control Systems Engineering\\[0.2cm]PTRJUN003}
+\vfill
+\textsc{\large Mechatronics: Department of Electrical Engineering}\\[0.4cm]
+{\large University of Cape Town\\[0.4cm]11 October 2026}
+\end{center}\end{titlepage}
+\hypersetup{pageanchor=true}
+\pagenumbering{roman}
+\begingroup\small\setlength{\parskip}{0pt}\tableofcontents\endgroup\clearpage
+\phantomsection\addcontentsline{toc}{section}{List of Figures}
+\begingroup\small\setlength{\parskip}{0pt}\listoffigures\endgroup\clearpage
+\phantomsection\addcontentsline{toc}{section}{List of Tables}
+\begingroup\small\setlength{\parskip}{0pt}\listoftables\endgroup\clearpage
+\pagenumbering{arabic}
+\input{\ReportRoot sections/body.tex}
+\label{main:last}
+\clearpage
+\renewcommand{\thepage}{R\arabic{page}}\setcounter{page}{1}
+\input{\ReportRoot sections/references.tex}
+\clearpage\appendix\renewcommand{\thepage}{A\arabic{page}}\setcounter{page}{1}
+\input{\ReportRoot sections/appendices.tex}
+\end{document}
+
+
+================================================================================
+FILE: report/repository.tex
+================================================================================
+\newcommand{\RepoRoot}{https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-}
+\newcommand{\RepoBranch}{main}
+\newcommand{\RepoLink}[2]{\href{\RepoRoot/tree/\RepoBranch/#1}{#2}}
+\newcommand{\RepoFile}[2]{\href{\RepoRoot/blob/\RepoBranch/#1}{#2}}
+\newcommand{\RepoStatus}{Supporting files are available in the GitHub repository. Folder links open the corresponding folders on the main branch.}
+
+
+================================================================================
+FILE: report/sections/appendices.tex
+================================================================================
+\section{Photographs of the Final Controller}\label{app:photos}
+\Fref{fig:board} documents the soldered Veroboard implementation described in \Sref{sec:hardware}. The board has three eight-pin op-amp packages and a blue bias trimmer. The photograph records the final physical assembly; it does not establish every underside connection or measured resistance.
+\fig{../../hardware/veroboard.jpeg}{.84}{Supplied final Veroboard photograph. The three op-amp stages and adjustable bias trimmer are visible.}{fig:board}
+The circuit design specifies 741-type devices and bipolar supply rails. Device markings and decoupling connections should be checked against the physical board when verifying the as-built netlist. No photographs of handwritten calculations are used in this report.
+\page
+
+\section{Experimental Demonstration Record}\label{app:demo}
+The original display in \Fref{fig:demo} supports the response evaluated in \Sref{sec:tests}. The red trace is the reference and the blue trace is altitude. This image is also retained in \texttt{data/session2/hardware\_step\_test.jpeg}.
+\fig{../../data/session2/hardware_step_test.jpeg}{1}{Original controller-test display for PTRJUN003, showing the altitude response and terminal readouts.}{fig:demo}
+The numerical values transcribed in \Tref{tab:display} support the tracking and sensor checks.
+\begin{table}[H]\centering\small
+\caption{Numerical readouts transcribed from the retained test display.}\label{tab:display}
+\begin{tabular}{lr}\toprule\thead
+Field & Displayed value\\\midrule
+Student number & PTRJUN003\\
+Set point & 5.033 m\\
+Height & 4.897 m\\
+Tracking error & 0.137 m\\
+Angle of attack / command & 2.498 V\\
+Height (left panel) & 4.896 m\\
+Sensor output (left panel) & 4.553 V\\
+Elapsed time & 86.10 s\\\bottomrule
+\end{tabular}\end{table}
+The 0.001 m differences between the readouts are consistent with rounding or asynchronous display updates. The assessor's marking sheet and signature were not supplied, so an awarded demonstration mark is not claimed.
+\page
+
+\section{Original Simulink Evidence}\label{app:simulink}
+\Fref{fig:originalmodel} preserves the supplied model image. Its visible values match the identified plant, sensor coefficient and selected gain used in \Sref{sec:design}.
+\fig{../../data/session2/simulink_model.png}{1}{Supplied Simulink model: $k_s=0.93$, $K_p=0.01432$, $u_h=2.5$ V, velocity plant $14.2748/(8.1s+1)$ and position integrator.}{fig:originalmodel}
+\Fref{fig:originalscope} begins at a 2.5 m reference while the output starts near zero; the reference subsequently changes to 5 m at approximately 2.5 s. The trace therefore combines startup and a reference change.
+\fig{../../data/session2/simulink_scope.png}{.88}{Original supplied scope with reference and altitude traces. The initial output is not settled at the initial reference.}{fig:originalscope}
+The regenerated 0 to 5 m step in \Fref{fig:nominal} avoids combining these initial conditions. The included \texttt{matlab/build\_simulink\_model.m} creates a native model with explicit 0--5 V command saturation when executed in Simulink. The original native \texttt{.slx} file was not supplied.
+\page
+
+\section{Complete Circuit and Interface}\label{app:circuit}
+\subsection{Signal Stages}
+\Fref{fig:circuit} uses the component numbering of the supplied circuit files. Its bias input connects to the P1 wiper in \Fref{fig:biasnetwork}; the two figures together define the complete controller signal and bias networks.
+\begin{figure}[H]\centering\resizebox{\linewidth}{!}{\input{\ReportRoot sections/circuit.tex}}
+\caption{Labelled three-stage proportional controller. DAC-0 feeds the inverting sensor branch; DAC-1 feeds the non-inverting reference branch. ADC-2 monitors the sensor and ADC-1 receives the command.}\label{fig:circuit}
+\end{figure}
+All three op-amps use pin 7 for $+15$ V, pin 4 for $-15$ V, pin 2 for the inverting input, pin 3 for the non-inverting input and pin 6 for output. Pins 1 and 5 (offset null) and pin 8 (NC) are unused in the documented 741 design. \Tref{tab:daq} gives the interface mapping.
+\page
+
+\subsection{Bias Network and Supply Decoupling}
+\begin{figure}[H]\centering
+\begin{circuitikz}[american,scale=.85,transform shape]
+\draw (0,0) node[ground]{} to[R,l=$R_{11}\ 3.9\,\mathrm{k}\Omega$] (0,-1.5) coordinate(A)
+ to[R,l={$P_{\rm top}=10W\,\mathrm{k}\Omega$}] (0,-3) coordinate(W)
+ to[R,l={$P_{\rm bot}=10(1-W)\,\mathrm{k}\Omega$}] (0,-4.5) coordinate(B)
+ to[R,l=$R_{13}\ 22\,\mathrm{k}\Omega$] (0,-6) node[below]{$-15$ V};
+\draw (A)--(-3,-1.5) to[R,l_=$R_{12}\ 1.2\,\mathrm{k}\Omega$] (-3,-4.5)--(B);
+\draw (W) node[circ]{} -- (5,-3) -- (5,-3.7) node[right]{P1 wiper to $R_9$ / U3 pin 2};
+\node[left] at (A){A};\node[left] at (B){B};
+\node[align=left,anchor=west] at (4.1,-4.9){P1 total: 10 k$\Omega$\\$W=0.783081$ nominal\\wiper loaded through U3};
+\draw (7,0) node[above]{$+15$ V (pin 7)} to[C,l=$100\,\mathrm{nF}$] (7,-1.4) node[ground]{};
+\draw (10,0) node[above]{$-15$ V (pin 4)} to[C,l=$100\,\mathrm{nF}$] (10,-1.4) node[ground]{};
+\node[align=center] at (8.5,-2.7){repeat at U1, U2 and U3\\six capacitors in the design};
+\end{circuitikz}
+\caption{Bias potentiometer represented by its two segments, shunt resistor and end resistors; supply decoupling is repeated at each op-amp.}\label{fig:biasnetwork}
+\end{figure}
+\begin{table}[H]\centering\small
+\caption{DAQ and supply connections.}\label{tab:daq}
+\begin{tabularx}{\linewidth}{lX}\toprule\thead
+Connection & Controller node\\\midrule
+DAC-1 & $r_v$, U1 reference branch through $R_1$.\\
+DAC-0 & $y_v$, U1 sensor branch through $R_3$.\\
+ADC-2 & Sensor monitor at $y_v$.\\
+ADC-1 & Command $u$, U3 pin 6; permitted plant range 0--5 V.\\
+Ground & Shared by DAQ, bias network and bench supply.\\
+$\pm15$ V & Op-amp rails; these do not define the permitted plant command.\\\bottomrule
+\end{tabularx}\end{table}
+The LTspice source and supplied circuit image place $R_{11}$ at ground. The supplied KiCad file labelled that endpoint $+15$ V; its bundled copy is corrected to ground to match those two records. This correction is documented in \texttt{hardware/design\_basis.md}. Calibration sets $r_v=y_v$, then adjusts P1 until the loaded ADC-1 command is 2.500 V. Keep the wiper fixed during testing.
+\page
+
+\subsection{Bias Loading and Stage Gain Calculations}\label{app:loading}
+With the wiper unloaded, $R_P=P1\parallel R_{12}=10\parallel1.2=1.0714286$ k$\Omega$. The end-to-end current and pot-end voltages are
+\begin{align}
+I&=\frac{-15}{3.9+1.0714286+22}=-0.556143\unit{mA},\\
+V_A&=I(3.9)=-2.168962\unit{V},\qquad V_B=I(3.9+1.0714286)=-2.764831\unit{V},\\
+V_{\rm th}&=V_A+W(V_B-V_A).
+\end{align}
+Set the supply sources to zero and inject a 1 A test current at the wiper. The node-conductance equations for A, B and the wiper are
+\begin{equation}
+\begin{bmatrix}
+G_{11}+G_{12}+G_t&-G_{12}&-G_t\\
+-G_{12}&G_{13}+G_{12}+G_b&-G_b\\
+-G_t&-G_b&G_t+G_b
+\end{bmatrix}
+\begin{bmatrix}V_A'\\V_B'\\V_w'\end{bmatrix}
+=\begin{bmatrix}0\\0\\1\end{bmatrix},
+\end{equation}
+where $G_i=1/R_i$, $G_t=1/(WP1)$ and $G_b=1/[(1-W)P1]$. The test voltage $V_w'$ gives $R_{\rm th}$. Solving the hover equation
+\begin{equation}
+-\frac{R_{10}}{R_9+R_{\rm th}(W)}V_{\rm th}(W)=2.5
+\end{equation}
+gives $W=0.783080594$, $R_{\rm th}=5423.0014$ $\Omega$ and $V_{\rm th}=-2.6355750$ V. The loaded zero-error wiper is $-2.500$ V.
+
+For U3, define $r=R_{10}/(R_9+R_{\rm th})=0.94855960$. Since the non-inverting divider gives $V_+=V_2/2$, virtual short and KCL give
+\begin{align}
+u&=(1+r)V_+-rV_{\rm th}=\frac{1+r}{2}V_2-rV_{\rm th},\\
+g_3&=\frac{1+0.94855960}{2}=0.97427980,\\
+K_p&=\left(\frac{1}{100}\right)\left(1+\frac{4.7}{10}\right)(0.97427980)=0.014321913.
+\end{align}
+The ideal buffered result 0.0147 differs by 2.57\%, while the selected model value 0.01432 differs from the loaded calculation by only 0.0134\%. These are circuit-model calculations; a measured input/output slope of the final board was not supplied.
+\page
+
+\section{Detailed Calculations}\label{app:calculations}
+\subsection{Identification and Timing}
+\Tref{tab:rawsamples} gives selected original samples and derived velocities. The finite manual step is evident in the input column. Endpoint times are listed for consistency with the CSV; each derivative physically belongs to its interval midpoint.
+\begin{table}[H]\centering\small
+\caption{Selected identification samples and backward-difference results.}\label{tab:rawsamples}
+\begin{tabular}{rrrrr}\toprule\thead
+$t$ [s] & $u$ [V] & $y_v$ [V] & $y$ [m] & $v_i$ [m/s]\\\midrule
+15.7 & 2.495 & 0.000 & 0.000 & 0.00\\
+15.8 & 2.908 & 0.000 & 0.000 & 0.00\\
+15.9 & 4.607 & 0.000 & 0.000 & 0.00\\
+16.0 & 5.000 & 0.034 & 0.037 & 0.37\\
+16.9 & 5.000 & 2.098 & 2.256 & 4.08\\
+17.0 & 5.000 & 2.513 & 2.703 & 4.47\\
+23.9 & 5.000 & 10.000 & 104.823 & 22.36\\
+24.0 & 5.000 & 10.000 & 107.076 & 22.53\\
+24.1 & 5.000 & 10.000 & 109.345 & 22.69\\\bottomrule
+\end{tabular}\end{table}
+\begin{align}
+v(24.0)&=(107.076-104.823)/0.1=22.53\unit{m/s},\\
+v(24.1)&=(109.345-107.076)/0.1=22.69\unit{m/s},\\
+\bar v_\infty&=\frac1{404}\sum_{t_i\ge120}\frac{y_i-y_{i-1}}{0.1}=35.68747525\unit{m/s},\\
+A&=(35.68747525-0)/2.5=14.27499010\unit{m/(s\,V)},\\
+v_{63}&=0.632(35.68747525)=22.55448436\unit{m/s},\\
+t_{63}&=24.0+0.1\frac{22.55448436-22.53}{22.69-22.53}=24.01530272\unit{s},\\
+\tau_{63}&=24.01530272-15.9=8.11530272\unit{s}.
+\end{align}
+The exponential fit minimises $\sum_{17\le t_i\le60}[v_i-V_\infty(1-e^{-(t_i-t_0)/\tau})]^2$. Its outputs are $V_\infty=35.68747059$ m/s, $\tau=8.10393362$ s and $t_0=15.91583783$ s. These two methods corroborate rounding to $\tau=8.1$ s. They do not create two experimental trials.
+
+The sensor least-squares fit in \Eref{eq:sensor} excludes zero and clipped pairs. The check $k_s(2.703)=0.93(2.703)=2.51379$ V agrees with the recorded 2.513 V within rounding.
+\page
+
+\subsection{Root-Locus Angle and Magnitude Checks}
+The locus for variable $K_p$ uses $G_0(s)=k_sG_y(s)=(Ak_s/\tau)/[s(s+1/\tau)]$, where $Ak_s/\tau=1.638959$ s$^{-2}$. At the selected upper pole $s_d=-0.0617284+j0.1402123$,
+\begin{align}
+\angle s_d&=113.76147^\circ,\qquad
+\angle(s_d+1/\tau)=66.23853^\circ,\\
+\angle G_0(s_d)&=-113.76147^\circ-66.23853^\circ=-180^\circ,\\
+K_p&=\frac1{|G_0(s_d)|}
+=\frac{|s_d|\,|s_d+1/\tau|}{Ak_s/\tau}
+=\frac{(0.153198845)^2}{1.63895852}=0.01432.
+\end{align}
+Both the negative-feedback angle criterion and magnitude criterion are satisfied. The quadratic roots independently give the same pole pair.
+
+\subsection{Nominal Step and Settling Calculation}
+Substituting into \Eref{eq:exactstep},
+\begin{equation}
+y(t)=5\left[1-e^{-0.061728395t}
+\left(\cos(0.140212308t)+0.44025\sin(0.140212308t)\right)\right].
+\end{equation}
+The first peak occurs at $t_p=\pi/\omega_d=22.405969$ s. Since $\cos\pi=-1$ and $\sin\pi=0$,
+\begin{equation}
+y(t_p)=5[1+e^{-0.061728395(22.405969)}]=6.254019\unit{m},
+\end{equation}
+so $M_p=(6.254019-5)/5\times100=25.080375\%$.
+
+The error envelope satisfies $|y-5|/5\le e^{-\sigma t}/\sqrt{1-\zeta^2}$. Solving this bound for 2\% gives
+\begin{equation}
+T_{\rm env}=-\frac{\ln(0.02\sqrt{1-0.4029299^2})}{0.061728395}=64.80975\unit{s}.
+\end{equation}
+Actual settling is found by evaluating the full response, locating the last sample for which $|y-5|>0.1$ m, and taking the next sample. A 0.005 s grid gives 54.89 s. This definition agrees with reference-based settling calculations \cite{stepinfo}.
+
+Command headroom follows from $u=2.5+K_pk_s(5-y)$: the highest command is 2.566588 V at the step, and the lowest is $2.5-0.01432(0.93)(1.254019)=2.483299$ V at the altitude peak. Neither reaches the 0 or 5 V limit.
+\page
+
+\subsection{Aerodynamic and Component Uncertainty}
+With fixed $k_T$, the uncertain characteristic polynomial is $s^2+b's+k_TK_pk_s$. The worst scalar case has $b'=0.9b_0$ and $K_p'=1.1K_{p,0}$. Applying the required damping ratio gives
+\begin{equation}\label{eq:jointbound}
+K_{p,0}<\frac{(0.9b_0)^2}{4k_Tk_s\zeta_{\min}^2(1.1)}
+=\frac{0.81}{1.1}(0.01815443)=0.01336826.
+\end{equation}
+At the supplied gain the worst-case damping is $(0.9/\sqrt{1.1})(0.4029299)=0.34575$, and \Eref{eq:overshoot} gives 31.42\% overshoot. This explains why passing drag-only uncertainty is insufficient for the joint case.
+
+For independent loop-resistor tolerances, use the U1 coefficients and U2/U3 gains defined in \Sref{sec:hardware}. Assign each of $R_1$--$R_{10}$ either 0.9 or 1.1 times its nominal value, then use both drag extremes. There are $2^{10}\times2=2048$ cases. The bias network is held at its nominal Thevenin resistance and zero-error output is recalibrated in each case. \Tref{tab:corners} reports this optimistic subset.
+\begin{table}[H]\centering\small
+\caption{Independent loop-resistor corner predictions.}\label{tab:corners}
+\begin{tabularx}{\linewidth}{Xr}\toprule\thead
+Quantity & Range / worst value\\\midrule
+Feedback gain $K_f$ & 0.009072--0.022784\\
+Reference/feedback ratio $a_r/a_f$ & 0.672104--1.487864\\
+Absolute DC tracking error & 48.7864\%\\
+Overshoot about each case's own final altitude & 38.9461\%\\\bottomrule
+\end{tabularx}\end{table}
+For example, $R_1=0.9(100\,\mathrm{k}\Omega)$, $R_2=1.1(1\,\mathrm{k}\Omega)$, $R_3=1.1(100\,\mathrm{k}\Omega)$ and $R_4=0.9(1\,\mathrm{k}\Omega)$ give
+\begin{equation}
+a_f=0.9/110=0.00818182,\quad
+\frac{a_r}{a_f}=\frac{(1+0.00818182)(1.1)/(90+1.1)}{0.00818182}=1.487864.
+\end{equation}
+Thus a 5 m reference tends to 7.43932 m even after hover recalibration. The type number cannot remove unequal reference and feedback scaling.
+\page
+\subsection{Practical Gain and Ratio Correction}
+The corner distributions in \Fref{fig:components} separate dynamic overshoot from DC ratio error.
+\fig{component_robustness}{.92}{Loop-resistor corners. Dashed limits are 30\% overshoot and 8\% tracking error. The histograms show corner counts, not probabilities.}{fig:components}
+Failure in this subset rejects a guarantee for all components. Bias-network and op-amp variations can add error. After matching the U1 ratios, a practical gain correction is to replace both 1 k$\Omega$ resistors with matched 680 $\Omega$ values:
+\begin{align}
+K_{p,\rm new}&=\frac{680}{100000}(1.47)(0.97427980)=0.009738901,\\
+\zeta_{\rm worst}&=\frac{0.9b_0}{2\sqrt{k_T(1.1K_{p,\rm new})k_s}}\approx0.4193,\\
+M_{p,\rm worst}&\approx23.44\%,\\
+|\delta u_b|_{\max}&=0.08(5)(0.009738901)(0.93)=3.623\unit{mV}.
+\end{align}
+This scalar check assumes matched reference and feedback ratios; it is not a guarantee for independent resistor corners. Lower gain increases damping but tightens the hover-bias allowance. The board must be recalibrated and retested after any change.
+\page
+
+\subsection{Experimental Metrics and Uncertainty}
+The digitised plot uses pixel bounds $x=602\ldots1414$ for 0--120 s and $p_y=60\ldots540$ for 20--0 m. Therefore
+\begin{align}
+t&=\frac{x-602}{1414-602}(120),\qquad h=\frac{540-p_y}{540-60}(20),\\
+\Delta t&=0.147783\unit{s/pixel},\qquad\Delta h=0.041667\unit{m/pixel}.
+\end{align}
+The extracted peak is 6.229167 m at 22.019704 s. With the displayed reference, terminal height and zero starting altitude,
+\begin{align}
+e_f&=5.033-4.897=0.136\unit{m},\\
+\eta_{\rm track}&=100(1-0.136/5.033)=97.297834\%,\\
+M_{p,\rm ref}&=100(6.229167-5.033)/5.033=23.766475\%,\\
+\delta M_{p,\rm ref}&\approx100(0.041667)/5.033=0.82787\text{ percentage points}.
+\end{align}
+This practical overshoot metric uses the commanded reference. If the terminal display is used as a proxy for the actual settled output, the conventional final-output-normalised overshoot is $(6.229167-4.897)/4.897\times100\approx27.20\%$. Both estimates are below 30\%, but the screenshot alone does not establish an exact asymptotic output.
+\Tref{tab:comparison} compares the analytical, simulated and experimental metrics.
+\begin{table}[H]\centering\small
+\caption{Comparison of calculation, simulation and retained experiment.}\label{tab:comparison}
+\begin{tabularx}{\linewidth}{lXXX}\toprule\thead
+Metric & Analytical & Simulation & Experiment\\\midrule
+Reference & 5.000 m & 5.000 m & 5.033 m\\
+Peak & 6.25402 m & 6.25402 m & $\approx6.229$ m\\
+Peak time & 22.40597 s & 22.405 s & $\approx22.020$ s\\
+Reference overshoot & 25.0804\% & 25.0804\% & $\approx23.7665\%$\\
+Tracking accuracy & 100\% ideal & $\to100\%$ & 97.2978\% displayed\\
+2\% reference settling & 64.81 s envelope & 54.89 s & Not established\\\bottomrule
+\end{tabularx}\end{table}
+For the 5.033 m reference the 8\% band is $5.033(1\pm0.08)=4.63036$--5.43564 m. The 2\% band is 4.93234--5.13366 m. The terminal height lies inside the first but outside the second. The discrepancy cannot be removed by redefining the settling band around the biased terminal value while claiming reference tracking.
+
+The command-bias calculation uses \Eref{eq:bias}: $\delta y=0.002/(0.01432\times0.93)=0.150177$ m. The illustrative test in \Fref{fig:disturbance} injects a positive 2 mV bias at 70 s; it is a model prediction rather than a recorded disturbance experiment.
+\page
+
+\section{Additional Validation and Response Plots}\label{app:validation}
+\Fref{fig:posval} checks the integrated position response; \Fref{fig:aero} compares the three aerodynamic cases listed in \Tref{tab:aero}. The underlying values are retained as CSV and JSON in the \texttt{results} folder.
+\fig{position_validation}{.88}{Position-domain model comparison and residuals for the retained identification run.}{fig:posval}
+\fig{aerodynamic_robustness}{.88}{Predicted altitude responses for $b=0.9b_0,b_0,1.1b_0$, with local thrust slope held fixed.}{fig:aero}
+\page
+\Fref{fig:disturbance} demonstrates sensitivity to a defined input bias. At nominal gain its predicted final displacement is +0.150 m, within the 0.4 m allowance for a 5 m reference.
+\fig{disturbance_prediction}{.95}{Illustrative simulated response to +2 mV actuator bias added at 70 s. The shaded region is the 8\% tracking band.}{fig:disturbance}
+This simulation tests one stated disturbance amplitude. It does not imply rejection of arbitrary disturbance magnitudes or establish experimental disturbance performance.
+\page
+
+\section{Identification Data and Verification Code}\label{app:data}
+\subsection{Data Provenance}
+The unmodified \texttt{data/session1/PTRJUN003\_raw.csv} contains time, command voltage, sensor voltage, altitude and stored speed. The processed copy excludes the 31 pre-reset rows and adds recalculated velocity, midpoint time and model predictions.
+
+\Tref{tab:rawsamples} gives selected calculations. The complete CSV and executable analysis reproduce all estimates; no previous-year data replace missing trials.
+
+
+\subsection{Organised Source Code}\label{app:code}
+The numerical pipeline is separated by task. All stages read the shared \RepoFile{config/lab_parameters.json}{parameter file}; output CSVs and metrics are stored in \RepoLink{results}{results}. Python generated the report figures. MATLAB equivalents require MATLAB with Control System Toolbox; the Simulink builder additionally requires Simulink.
+\begin{table}[H]\centering\small
+\caption{Code modules and their calculation responsibilities.}\label{tab:modules}
+\begin{tabularx}{\linewidth}{p{43mm}X}\toprule\thead
+Source location & Responsibility\\\midrule
+\RepoLink{analysis/modules}{Python modules} & Identification, controller response/root locus, robustness, hardware digitisation and disturbance simulation.\\
+\RepoLink{matlab/identification}{MATLAB identification} & Backward differences, velocity gain, 63.2\% timing and sensor calibration.\\
+\RepoLink{matlab/design}{MATLAB design} & Root-locus geometry, angle/magnitude checks, gain limits and response plots.\\
+\RepoLink{matlab/validation}{MATLAB validation} & Independent nominal and aerodynamic controller checks.\\
+\RepoLink{matlab/simulink}{Simulink builder} & Reconstructs and saves the nominal model.\\
+\RepoLink{calculations}{Worked calculations} & Separate calculation PDF, LaTeX equations and topic index.\\\bottomrule
+\end{tabularx}\end{table}
+Run the Python launcher from the project root:
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,rulecolor=\color{AngelBlue},columns=fullflexible,showstringspaces=false}
+\begin{lstlisting}[language=bash]
+python -m pip install -r requirements.txt
+python analysis/analyse.py
+\end{lstlisting}
+In MATLAB, set the Current Folder to \texttt{matlab}, then enter:
+\begin{lstlisting}[language=Matlab]
+run_all
+% Or run only the detailed root locus method:
+root_locus_design
+\end{lstlisting}
+\RepoFile{CODE_GUIDE.md}{The code guide} records dependencies, file responsibilities and step conventions. Voltage identification uses a 2.5 to 5.0 V step ($\Delta u=2.5$ V); the nominal controller test uses a 0 to 5 m altitude reference.
+\page
+\section{Repository Navigation and Reproduction}\label{app:repository}
+\RepoStatus\ Open the \href{\RepoRoot}{complete GitHub repository} or use the folder links in \Tref{tab:repo}. Figure, table, equation and appendix references remain internal PDF hyperlinks. The repository guide and calculation index explain how to reproduce each result.
+\begin{table}[H]\centering\small
+\caption{Clickable evidence map and corresponding Git folders.}\label{tab:repo}
+\begin{tabularx}{\linewidth}{p{37mm}X}\toprule\thead
+Folder / evidence link & Contents\\\midrule
+\RepoLink{data/session1}{\texttt{data/session1}} & Original identification CSV; source description in \Aref{app:data}.\\
+\RepoLink{data/session2}{\texttt{data/session2}} & Original experimental display and Simulink screenshots.\\
+\RepoLink{hardware}{\texttt{hardware}} & Board photograph, LTspice/KiCad design sources and circuit notes.\\
+\RepoLink{analysis}{\texttt{analysis}} & Python identification, simulation, digitisation and tolerance calculations.\\
+\RepoLink{matlab}{\texttt{matlab}} & Controller verification and Simulink model builder.\\
+\RepoLink{results}{\texttt{results}} & Processed CSVs, nominal traces, corners and scalar metrics.\\
+\RepoLink{report}{\texttt{report}} & LaTeX source, figures and compiled report.\\
+\RepoLink{scripts}{\texttt{scripts}} & Build, link configuration and folder indexes.\\
+\RepoLink{config}{\texttt{config}} & One shared parameter file for MATLAB and Python.\\
+\RepoLink{calculations}{\texttt{calculations}} & Worked calculation PDF and equation source.\\\bottomrule
+\end{tabularx}\end{table}
+
+\subsection{Build the Report}
+Extract the ZIP, keep its folder structure, install the Python requirements, and run:
+\begin{lstlisting}[language=bash]
+python -m pip install -r requirements.txt
+bash scripts/build.sh
+\end{lstlisting}
+The build regenerates numerical results and figures, then compiles \texttt{report/main.tex} with \texttt{latexmk -pdf}. A LaTeX distribution with TikZ and Circuitikz is required. The package also contains the compiled PDF for immediate viewing.
+
+\page
+\subsection{GitHub Folder Links}
+The report uses the repository supplied for this project:
+\begin{center}\href{\RepoRoot}{NateDogg247 / EEE3094S---Lab-2-PTRJUN003-}\end{center}
+The shared branch setting is \texttt{main}. Supporting-folder URLs use \texttt{/tree/main/}; individual source-file links use \texttt{/blob/main/}. \texttt{report/repository.tex} stores these settings centrally. Recompile the report after changing that file.
+
+\subsection{Page Count and Reproduction}
+The main report runs from Introduction on page 1 to Final Remarks on page 14. The title, table of contents, lists of figures and tables, references and appendices are excluded from this count. References use R-prefixed page numbers and appendices use A-prefixed page numbers.
+
+The numerical pipeline regenerates identification, root-locus, response, tolerance and experimental metrics. The report and calculation supplement retain the corresponding worked equations. The available record contains one identification run and one controller display; it cannot establish repeated-trial averages or an assessor-awarded demonstration mark.
+
+
+================================================================================
+FILE: report/sections/body.tex
+================================================================================
+\section{Introduction}\label{sec:intro}
+\subsection{Overview}
+The Kitticopter laboratory combines a physical analogue controller with a simulated vertical-motion plant through a data-acquisition (DAQ) interface. Session 1 identifies the plant from an applied voltage step. Session 2 uses that model to design, implement and test an altitude controller on Veroboard. The modelling, identification, design and evaluation below follow this experimental sequence \cite{template}.
+
+\subsection{Aim}
+The aim is to regulate altitude using proportional control while satisfying the four requirements in the 2026 laboratory brief \cite{lab}. \Tref{tab:requirements} translates these requirements into quantities that can be checked against the measured and simulated responses.
+\begin{table}[H]\centering\small
+\caption{Laboratory requirements and their evaluation measures.}\label{tab:requirements}
+\begin{tabularx}{\linewidth}{p{37mm}X}\toprule\thead
+Requirement & Evaluation measure\\\midrule
+Tracking accuracy $>92\%$ & $100(1-|x-y_\infty|/|x|)>92\%$ for a nonzero step reference.\\
+Overshoot $<30\%$ & $M_p=100(y_{\max}-y_\infty)/(y_\infty-y_0)<30\%$.\\
+Aerodynamic uncertainty $\pm10\%$ & Vary the identified drag coefficient $b$ by $\pm10\%$, keeping the thrust slope fixed.\\
+Component tolerance $\pm10\%$ & Examine changes in loop gain, reference/feedback ratio and hover bias.\\\bottomrule
+\end{tabularx}\end{table}
+
+\subsection{Objectives}
+\begin{enumerate}
+\item Derive the velocity and position models from the free-body diagram and identify the unknown drag, thrust and sensor parameters.
+\item Differentiate the recorded altitude, calculate the velocity gain and time constant, calibrate the sensor and validate the resulting model.
+\item Select and justify the proportional gain using root-locus and time-response calculations; check the nominal 5 m step and uncertainty cases.
+\item Document the three-stage controller circuit and assess the experimental response against the requirements.
+\end{enumerate}
+
+The analysis uses the supplied identification CSV, circuit design files, Simulink images, board photograph and controller-test display. Photographs and original screenshots are collected in the appendices. All numerical plots in the main report are regenerated from these records or from the stated equations. One identification run and one experimental controller response are retained; repeated-trial averages are therefore not claimed. Reproducible code and worked calculations are available in the \href{\RepoRoot}{GitHub repository}.
+\page
+
+\section{System Modelling}\label{sec:model}
+\subsection{Methodology}
+The laboratory permits a unit-mass model with velocity-proportional aerodynamic drag and constant gravity \cite{lab}. Upward altitude is positive. Newton's second law is applied first, the actuator is linearised around hover, and the Laplace transform then gives a first-order velocity model. Integrating velocity produces the position model used for control.
+
+\subsection{Modelling}
+\subsubsection{Free-Body and Block Diagrams}
+The forces in \Fref{fig:fbd} are upward rotor thrust, downward weight and drag opposing motion. The complete signal-flow diagram is given in \Fref{fig:block}; the notation is defined in \Tref{tab:signals}.
+\begin{figure}[H]\centering
+\begin{tikzpicture}[>=Latex,scale=.9]
+\draw[fill=AngelBlue!22,rounded corners] (-1,-.3) rectangle (1,.3);
+\node at (0,0){unit mass};
+\draw[->,thick] (0,.3)--(0,1.55) node[above]{$f_t(t)$};
+\draw[->,thick] (-.55,-.3)--(-.55,-1.5) node[below left]{$g=9.81\unit{m/s^2}$};
+\draw[->,thick] (.75,-.3)--(.75,-1.5) node[below right]{$b\dot y(t)$};
+\draw[->] (2,-.8)--(2,1) node[above]{$+y$};
+\node[anchor=west,align=left] at (2.6,0){drag shown for\\upward velocity};
+\end{tikzpicture}
+\caption{Free-body diagram of the normalised Kitticopter. Drag reverses direction when velocity reverses.}\label{fig:fbd}
+\end{figure}
+\begin{table}[H]\centering\small
+\caption{Model notation and units.}\label{tab:signals}
+\begin{tabularx}{\linewidth}{lXl}\toprule\thead
+Symbol & Description & Unit\\\midrule
+$x,y,v=\dot y$ & Reference altitude, altitude, vertical velocity & m, m, m/s\\
+$f_t,g,d_a$ & Mass-normalised thrust, gravity, extra disturbance & m/s$^2$\\
+$b$ & Mass-normalised aerodynamic coefficient & s$^{-1}$\\
+$u,u_h,\delta u$ & Command, hover command, $u-u_h$ & V\\
+$k_T$ & Local thrust slope with respect to voltage & m/(s$^2$ V)\\
+$A,\tau$ & Velocity gain and time constant & m/(s V), s\\
+$k_s$ & Position-to-voltage sensor coefficient & V/m\\
+$r_v,y_v,e_v$ & Reference, sensor, error voltage & V\\
+$K_p$ & Controller gain applied to voltage error & V/V\\\bottomrule
+\end{tabularx}\end{table}
+The unknowns required from identification are $A$, $\tau$ and $k_s$, from which $b$ and $k_T$ follow. The hover command is $u_h=2.5$ V, the midpoint of the specified 0--5 V plant-input range.
+\page
+
+\subsubsection{Dynamic Model}\label{sec:dynamic}
+Newton's second law, with mass normalised to one, gives
+\begin{equation}\label{eq:forces}
+\ddot y=f_t-b\dot y-g+d_a.
+\end{equation}
+At hover $f_{t,h}=g$. The local actuator relationship is $f_t=g+k_T(u-u_h)$; substituting this into \Eref{eq:forces} gives
+\begin{equation}\label{eq:dynamic}
+\ddot y+b\dot y=k_T\delta u+d_a,\qquad \delta u=u-u_h.
+\end{equation}
+The hover operating point does not imply $k_T=g/u_h$: the slope must be obtained from the step response. With zero initial conditions and disturbances set to zero,
+\begin{align}
+G_{vf}(s)&=\frac{V(s)}{F_t(s)}=\frac{1}{s+b},\\
+G_v(s)&=\frac{V(s)}{\Delta U(s)}=\frac{k_T}{s+b}=\frac{A}{\tau s+1},\quad
+\tau=\frac1b,\quad A=\frac{k_T}{b},\label{eq:velocityplant}\\
+G_y(s)&=\frac{Y(s)}{\Delta U(s)}=\frac{G_v(s)}s=\frac{A}{s(\tau s+1)}.\label{eq:plant}
+\end{align}
+Thus the velocity response is first order and the position plant is second order. The integrator explains why a nonzero voltage deviation produces an altitude ramp after the velocity transient.
+
+The reference is converted to voltage as $r_v=k_sx$, while the sensor gives $y_v=k_sy$. The implemented control law is
+\begin{equation}\label{eq:law}
+u=\operatorname{sat}_{[0,5]}\{2.5+K_p(r_v-y_v)\}.
+\end{equation}
+\begin{figure}[H]\centering
+\resizebox{\linewidth}{!}{\begin{tikzpicture}[>=Latex,block/.style={draw,fill=AngelBlue!12,minimum height=9mm,minimum width=15mm},sum/.style={draw,circle,inner sep=1pt,minimum size=6mm}]
+\node (x) at (0,0){$x$ (m)};\node[block] (ksr) at (1.5,0){$k_s$};
+\node[sum] (err) at (3,0){$\Sigma$};\node[block] (kp) at (4.4,0){$K_p$};
+\node[sum] (bias) at (5.8,0){$\Sigma$};\node[block] (sat) at (7.3,0){0--5 V};
+\node[sum] (sub) at (9,0){$\Sigma$};\node[block] (gv) at (11,0){$\dfrac{A}{\tau s+1}$};
+\node[block] (int) at (13,0){$1/s$};\node (y) at (14.5,0){$y$ (m)};
+\draw[->] (x)--(ksr);\draw[->] (ksr)--node[above]{$r_v$}(err);\draw[->] (err)--node[above]{$e_v$}(kp);
+\draw[->] (kp)--(bias);\draw[->] (bias)--(sat);\draw[->] (sat)--node[above]{$u$}(sub);
+\draw[->] (sub)--node[above]{$\delta u$}(gv);\draw[->] (gv)--node[above]{$v$}(int);\draw[->] (int)--(y);
+\draw[->] (5.8,1.2)node[above]{$u_h=2.5$ V}--node[right]{$+$}(bias);
+\draw[->] (9,1.2)node[above]{$u_h$}--node[right]{$-$}(sub);
+\node[block] (ksf) at (8,-1.6){$k_s$};
+\draw[->] (13.8,0)|-(ksf);\draw[->] (ksf)-|(err) node[pos=.94,left]{$-$};
+\end{tikzpicture}}
+\caption{Complete voltage/altitude feedback loop. The plant accepts a deviation command after hover subtraction.}\label{fig:block}
+\end{figure}
+\Fref{fig:block} applies $k_s$ once to each altitude signal. The hover terms cancel in the unsaturated deviation model; gravity must not be subtracted a second time. Although Session 2 mentions a 10 V supply restriction, the stricter 0--5 V plant-interface limit is used here.
+\page
+
+\subsubsection{Closed-Loop Representation}
+In the unsaturated region, $\Delta U=K_pk_s(X-Y)$. Substituting into \Eref{eq:plant} and collecting the output terms gives
+\begin{equation}
+Y=G_yK_pk_s(X-Y)\ \Rightarrow\ (1+G_yK_pk_s)Y=G_yK_pk_sX.
+\end{equation}
+Define $q=AK_pk_s$ and $D(s)=\tau s^2+s+q$. The reference and position-error transfer functions are
+\begin{align}
+L(s)&=K_pk_s\frac{A}{s(\tau s+1)},\\
+\frac{Y(s)}{X(s)}&=\frac{L(s)}{1+L(s)}=\frac{q}{D(s)},\label{eq:tracking}\\
+\frac{E_y(s)}{X(s)}&=1-\frac{Y(s)}{X(s)}=\frac{\tau s^2+s}{D(s)},\qquad E_y=X-Y.
+\end{align}
+An additional acceleration enters \Eref{eq:dynamic} directly. Therefore
+\begin{equation}\label{eq:disturbance}
+\frac{Y(s)}{D_a(s)}=\frac{\tau}{D(s)},\qquad
+\frac{Y(s)}{G(s)}=-\frac{\tau}{D(s)}\quad\text{for uncompensated gravity}.
+\end{equation}
+The 2.5 V bias compensates nominal gravity in the actual implementation.
+
+\subsubsection{Steady-State Properties}
+The loop is Type 1 because $L(s)$ contains one pole at the origin. For $K_p>0$, the characteristic polynomial $s^2+bs+k_TK_pk_s$ has positive coefficients and is stable. The final-value theorem gives zero step-reference error. For a ramp $x(t)=a_rt$, $K_v=\lim_{s\to0}sL(s)=AK_pk_s$, so $e_\infty=a_r/K_v$ is finite; a parabolic reference has infinite steady-state error.
+
+A constant disturbance behaves differently from a reference step. Applying the final-value theorem to \Eref{eq:disturbance} gives
+\begin{equation}\label{eq:bias}
+y_\infty-x_\infty=\frac{d_0}{k_TK_pk_s}
+=\frac{\delta u_b}{K_pk_s}\quad\text{when }d_0=k_T\delta u_b.
+\end{equation}
+For a 5 m reference and $K_p=0.01432$, the 8\% error allowance requires
+\begin{equation}
+|\delta u_b|<0.08(5)(0.01432)(0.93)=0.005327\unit{V}.
+\end{equation}
+Hover bias must consequently be calibrated to about 5.3 mV. The brief does not specify disturbance amplitude or injection point; disturbance compliance is evaluated for explicitly defined cases in \Aref{app:calculations}.
+\page
+
+\section{System Identification}\label{sec:id}
+\subsection{Introduction}
+Identification removes the position integrator by differentiating the metre-valued altitude. The resulting first-order velocity response permits independent estimates of DC gain and time constant. The sensor conversion is fitted separately from unsaturated voltage/altitude pairs.
+
+\subsection{Methodology}
+\subsubsection{Step-Testing}
+The Session 1 input circuit described in the brief uses a potentiometer to set the ADC command. The retained record starts at rest near 2.5 V and changes to 5 V. The nominal input increment is $\Delta u=5.0-2.5=2.5$ V. The final voltage is held long enough to identify a steady velocity. \Fref{fig:record} shows the input, position and sensor channels from this run.
+
+\subsection{Experimental Setup and Data Files}
+The \RepoLink{data/session1}{Session 1 data folder} contains the unmodified \texttt{PTRJUN003\_raw.csv}; \Aref{app:data} gives its provenance. Of 1,634 rows, the first 31 precede a clock reset from 9.5 to 0.1 s and contain zero altitude. They are excluded from analysis. The retained 1,603 samples span 0.1--160.3 s at 0.1 s spacing. The reset is not another trial.
+\fig{identification_record}{.84}{Recorded identification input and outputs. The sensor-voltage plateau is clipping at 10 V; altitude continues increasing.}{fig:record}
+\page
+
+\subsection{Data Processing}
+\subsubsection{Velocity Computation}
+The metre channel is differentiated using a backward difference:
+\begin{equation}\label{eq:diff}
+v_i=\frac{y_i-y_{i-1}}{t_i-t_{i-1}},\qquad t_{v,i}=\frac{t_i+t_{i-1}}2.
+\end{equation}
+For example, the 16.9 and 17.0 s positions are 2.256 and 2.703 m, giving $v=(2.703-2.256)/0.1=4.47$ m/s at midpoint 16.95 s. No smoothing is applied. The stored speed column agrees to CSV rounding. Differentiating the clipped voltage channel would incorrectly produce zero velocity; the metre channel avoids this error.
+
+\subsubsection{Estimation of Gain and Time Constant}
+The 404 velocity samples with endpoint time $t\ge120$ s give $v_\infty=35.68748$ m/s. With $v_0=0$,
+\begin{equation}\label{eq:gainid}
+A=\frac{v_\infty-v_0}{\Delta u}=\frac{35.68748-0}{5.0-2.5}
+=14.27499\unit{m/(s\,V)}.
+\end{equation}
+The first-order step response is $v(t)=v_\infty[1-e^{-(t-t_0)/\tau}]$. At one time constant, $1-e^{-1}\approx0.632$, so $v_{63}=0.632(35.68748)=22.55448$ m/s. The measured crossing lies between 24.0 and 24.1 s:
+\begin{align}
+t_{63}&=24.0+\frac{22.55448-22.53}{22.69-22.53}(24.1-24.0)=24.01530\unit{s},\\
+\tau_{63}&=t_{63}-t_0\approx24.01530-15.9=8.11530\unit{s}.
+\end{align}
+A least-squares exponential fit over 17--60 s gives $V_\infty=35.68747$ m/s, $\tau=8.10393$ s and $t_0=15.91584$ s. Endpoint-labelled differences are used in that fit; the midpoint shift is absorbed in $t_0$, leaving $\tau$ unchanged.
+
+\subsubsection{Sensor Calibration (V/m)}
+Using 22 nonzero pairs with $0<y_v<9.9$ V, the zero-intercept least-squares coefficient is
+\begin{equation}\label{eq:sensor}
+k_s=\frac{\sum_i y_i y_{v,i}}{\sum_i y_i^2}=0.9300026\unit{V/m}\approx0.93\unit{V/m}.
+\end{equation}
+The single-point check at 17.0 s is $2.513/2.703=0.92971$ V/m. The regression uses multiple unsaturated pairs rather than the clipped 10 V tail. Full processing equations and selected sample calculations are in \Aref{app:calculations}.
+\page
+
+\subsection{Results and Analysis}
+\subsubsection{Step Response Analysis}
+\Fref{fig:velocity} compares the differentiated measurements with the exponential fit and shows the 63.2\% crossing. Velocity tends to a constant while altitude continues rising, as expected for the lag-plus-integrator model.
+\fig{velocity_identification}{.73}{Velocity identification. The steady tail determines gain; interpolation and fitting determine the time constant.}{fig:velocity}
+\subsubsection{Identification Results}
+\Tref{tab:id} compares the two estimation methods. These are estimates from one run, not independent repeated trials. The rounded parameters reproduce the values used in the supplied Simulink model.
+\begin{table}[H]\centering\small
+\caption{Identification estimates and adopted design parameters.}\label{tab:id}
+\begin{tabular}{lrrr}\toprule\thead
+Method & $A$ [m/(s V)] & $\tau$ [s] & $k_s$ [V/m]\\\midrule
+Tail / 63.2\% crossing & 14.27499 & 8.11530 & ---\\
+Exponential / sensor fit & 14.27499 & 8.10393 & 0.930003\\
+Adopted model & 14.2748 & 8.1000 & 0.9300\\\bottomrule
+\end{tabular}\end{table}
+
+\subsection{Transfer Function Approximation}
+Substitution into \Eref{eq:velocityplant} and \Eref{eq:plant} gives
+\begin{equation}\label{eq:identified}
+\boxed{G_v(s)=\frac{14.2748}{8.1s+1},\qquad
+G_y(s)=\frac{14.2748}{s(8.1s+1)}}.
+\end{equation}
+The physical coefficients follow directly: $b=1/8.1=0.1234568$ s$^{-1}$ and $k_T=A/\tau=14.2748/8.1=1.762321$ m/(s$^2$ V). The differences between fitted and rounded values are small relative to the specified 10\% aerodynamic uncertainty.
+\page
+
+\subsection{Model Validation}\label{sec:validation}
+The rounded model is evaluated over both the fitting interval (17--60 s) and a held-out tail ($t>60$ s). It predicts
+\begin{align}
+v_{\rm mod}(t)&=2.5A(1-e^{-r/\tau}),\\
+y_{\rm mod}(t)&=2.5A\{r-\tau(1-e^{-r/\tau})\},\qquad r=\max(t-t_0,0).
+\end{align}
+The effective onset fitted above is retained. \Fref{fig:validation} checks sensor linearity and velocity residuals; \Tref{tab:validation} reports error magnitudes.
+\fig{validation_sensor}{.91}{Sensor calibration from unsaturated pairs and velocity residuals outside the fitting interval.}{fig:validation}
+\begin{table}[H]\centering\small
+\caption{Validation errors using the rounded design model.}\label{tab:validation}
+\begin{tabularx}{\linewidth}{Xrr}\toprule\thead
+Comparison & Interval [s] & RMSE\\\midrule
+Velocity in fitting window & 17--60 & 0.00533 m/s\\
+Held-out velocity & $>60$ & 0.00436 m/s\\
+Held-out position & $>60$ & 1.686 m\\\bottomrule
+\end{tabularx}\end{table}
+RMSE is $\sqrt{N^{-1}\sum_i(z_i-z_{{\rm mod},i})^2}$. Relative to final velocity, the held-out error is $0.0122\%$. The position comparison in \Fref{fig:posval} reaches almost 4,865 m; small rounding and timing differences accumulate through integration, so its absolute RMSE is larger.
+
+The residuals support the first-order velocity structure and the adopted parameter values for controller design. This validation tests another interval of the same run. It does not establish repeatability across independent experiments or the accuracy of a model-check submission to the laboratory system.
+\page
+
+\section{Controller Design}\label{sec:design}
+\subsection{Design Process}
+\subsubsection{Plant for Design}
+The design uses \Eref{eq:identified}, $k_s=0.93$ V/m and a 2.5 V hover bias. Its characteristic equation is
+\begin{equation}\label{eq:characteristic}
+1+K_pk_sG_y(s)=0\quad\Rightarrow\quad8.1s^2+s+14.2748(0.93)K_p=0.
+\end{equation}
+
+\subsubsection{Design Specifications}
+For a standard underdamped second-order response,
+\begin{equation}\label{eq:overshoot}
+M_p=100e^{-\pi\zeta/\sqrt{1-\zeta^2}},\quad
+M_p<30\%\Rightarrow\zeta>\frac{-\ln0.3}{\sqrt{\pi^2+\ln^20.3}}=0.357857.
+\end{equation}
+Matching the monic form of \Eref{eq:characteristic} to $s^2+2\zeta\omega_ns+\omega_n^2$ yields
+\begin{equation}\label{eq:second}
+\omega_n=\sqrt{\frac{AK_pk_s}{\tau}},\qquad
+\zeta=\frac{1}{2\sqrt{\tau AK_pk_s}},\qquad
+\sigma=\zeta\omega_n=\frac{1}{2\tau}.
+\end{equation}
+Therefore $K_p<1/(4\tau Ak_s\zeta_{\min}^2)=0.0181544$ for nominal overshoot compliance. Type 1 tracking is ideal only after bias and reference/sensor scaling are calibrated. A practical nominal validation target is a 2\% band within 60 s; for drag-only uncertainty, 75 s is reasonable. These are reporting targets added to the four official requirements, not guarantees for uncalibrated component corners.
+
+\subsubsection{Gain Selection (Root Locus)}
+The open-loop poles are $0$ and $-1/\tau=-0.1234568$; there are no finite zeros. The real-axis locus lies between the poles, and its two asymptotes have angles $\pm90^\circ$ about centroid $-1/(2\tau)$. Differentiating $K_p(s)=-s(\tau s+1)/(Ak_s)$ gives
+\begin{equation}
+\frac{dK_p}{ds}=0\Rightarrow s_b=-\frac{1}{2\tau}=-0.0617284,\quad
+K_{p,b}=\frac{1}{4\tau Ak_s}=0.00232489.
+\end{equation}
+The supplied gain $K_p=0.01432$ is above breakaway and below the nominal overshoot limit. Since the complex branches have fixed real part $-0.0617284$, a 30 s decay-envelope target ($\sigma\approx4/30$) cannot be imposed by proportional gain alone. Detailed angle and magnitude checks are in \Aref{app:calculations}; the \RepoLink{matlab/design}{root-locus code folder} reproduces the method.
+\page
+
+\subsubsection{Design Summary}
+Substituting $K_p=0.01432$ gives $q=14.2748(0.01432)(0.93)=0.1901061$ and
+\begin{equation}
+G_{cl}(s)=\frac{0.1901061}{8.1s^2+s+0.1901061}
+=\frac{0.02346989}{s^2+0.1234568s+0.02346989}.
+\end{equation}
+The roots and response quantities in \Tref{tab:design} are calculated from \Eref{eq:second} and checked against \Fref{fig:locus}.
+\begin{table}[H]\centering\small
+\caption{Manual nominal-controller calculations.}\label{tab:design}
+\begin{tabularx}{\linewidth}{lXr}\toprule\thead
+Quantity & Calculation & Result\\\midrule
+Natural frequency & $\sqrt{0.1901061/8.1}$ & 0.153199 rad/s\\
+Damping ratio & $1/[2\sqrt{8.1(0.1901061)}]$ & 0.402930\\
+Damped frequency & $\omega_n\sqrt{1-\zeta^2}$ & 0.140212 rad/s\\
+Closed-loop poles & $-\sigma\pm j\omega_d$ & $-0.0617284\pm j0.140212$\\
+Overshoot & $100e^{-\pi(0.402930)/\sqrt{1-0.402930^2}}$ & 25.0804\%\\
+Peak time & $\pi/0.140212$ & 22.4060 s\\
+Peak altitude & $5(1+0.250804)$ & 6.25402 m\\\bottomrule
+\end{tabularx}\end{table}
+\fig{root_locus}{.86}{Proportional root locus. The selected poles satisfy the 30\% overshoot boundary; the 30 s envelope target is beyond the attainable complex branches.}{fig:locus}
+The exact step response is
+\begin{equation}\label{eq:exactstep}
+y(t)=5\!\left[1-e^{-\sigma t}\!\left(\cos\omega_dt+\frac{\sigma}{\omega_d}\sin\omega_dt\right)\right].
+\end{equation}
+The usual $4/\sigma=64.8$ s settling approximation is conservative here. The envelope bound $-\ln[0.02\sqrt{1-\zeta^2}]/\sigma=64.81$ s and the actual final 2\% crossing, 54.89 s, are different quantities.
+\page
+
+\subsection{Simulink Model Design}\label{sec:simulation}
+\subsubsection{Block Diagram Implementation}
+The implementation follows \Fref{fig:block}: reference scaling, error subtraction, $K_p$, hover addition, 0--5 V saturation, hover subtraction, the velocity lag and an integrator. The original model and scope are in \Aref{app:simulink}. The supplied scope includes startup from zero while the reference begins at 2.5 m. For an unambiguous demonstration test, the regenerated model uses zero initial altitude/velocity and a 0 to 5 m reference step.
+
+\subsubsection{Representative Simulation Results}
+Python evaluates \Eref{eq:exactstep} on a 0.005 s grid. \Fref{fig:nominal} shows altitude and the corresponding command. The \RepoLink{matlab}{MATLAB folder} contains independent verification and a Simulink model-building script; those scripts are supplied for execution in MATLAB.
+\fig{nominal_response}{.76}{Nominal 5 m step prediction, with the 2\% altitude band and actuator command.}{fig:nominal}
+The simulated peak is 6.25402 m at 22.405 s, agreeing with \Tref{tab:design}. The final reference-band entry is $T_{s,2\%}=54.89$ s. Command limits are inactive: $u(0^+)=2.5+0.01432(0.93)(5)=2.56659$ V and $u_{\min}=2.48330$ V. The nominal 60 s target is met.
+
+For aerodynamic uncertainty, $b$ varies while $k_T$ remains fixed; $\tau=1/b$ and $A=k_T/b$ therefore vary together. \Tref{tab:aero} and \Fref{fig:aero} show that drag uncertainty alone satisfies the 30\% limit and proposed 75 s target.
+\begin{table}[H]\centering\small
+\caption{Predicted performance under aerodynamic uncertainty.}\label{tab:aero}
+\begin{tabular}{lrrr}\toprule\thead
+Drag & Peak [m] & Overshoot [\%] & $T_{s,2\%}$ [s]\\\midrule
+$0.9b_0$ & 6.473 & 29.45 & 70.80\\
+$b_0$ & 6.254 & 25.08 & 54.89\\
+$1.1b_0$ & 6.058 & 21.15 & 54.59\\\bottomrule
+\end{tabular}\end{table}
+\page
+
+\subsubsection{Controller Hardware Implementation}\label{sec:hardware}
+The controller uses a difference amplifier, a non-inverting amplifier and a biased output stage. The labelled circuit is in \Fref{fig:circuit}; the final Veroboard photograph is in \Fref{fig:board}. The supplied circuit files establish the design values in \Tref{tab:components}; the photograph alone cannot verify the underside wiring.
+\begin{table}[H]\centering\small
+\caption{Documented circuit components and nominal stage functions.}\label{tab:components}
+\begin{tabularx}{\linewidth}{p{20mm}p{48mm}X}\toprule\thead
+Stage & Values & Function\\\midrule
+U1 & $R_1=R_3=100$ k$\Omega$; $R_2=R_4=1$ k$\Omega$ & $V_1=0.01(r_v-y_v)$; reference on $+$, sensor on $-$.\\
+U2 & $R_5=4.7$ k$\Omega$; $R_6=10$ k$\Omega$ & $V_2=(1+R_5/R_6)V_1=1.47V_1$.\\
+U3 & $R_7$--$R_{10}=100$ k$\Omega$ & Positive proportional correction plus adjustable 2.5 V bias.\\
+Bias & $R_{11}=3.9$ k$\Omega$ to ground; $R_{12}=1.2$ k$\Omega$ across P1; $R_{13}=22$ k$\Omega$ to $-15$ V; P1 = 10 k$\Omega$ & Loaded wiper feeds $R_9$; trim at equal reference and sensor inputs.\\
+Supply & Three 741-type stages, $\pm15$ V; six 100 nF capacitors in design & Common DAQ ground; one capacitor from each rail to ground at each op-amp.\\\bottomrule
+\end{tabularx}\end{table}
+The unloaded product $0.01(1.47)=0.0147$ overestimates gain. At the calibrated setting $W=0.783081$, the bias network has $V_{\rm th}=-2.635575$ V and $R_{\rm th}=5.423001$ k$\Omega$. Thus
+\begin{align}
+u_0&=-\frac{100}{100+5.423001}(-2.635575)=2.500000\unit{V},\\
+K_{p,\rm circuit}&=0.01(1.47)\frac{1+100/(100+5.423001)}2=0.0143219.
+\end{align}
+This agrees with the simulation gain to 0.014\%. \Aref{app:circuit} gives the complete loading derivation, rail connections and DAQ mapping.
+
+Independent resistor variation also changes the reference/feedback ratio. Let $a_f=R_4/R_3$, $a_r=(1+a_f)R_2/(R_1+R_2)$, $g_2=1+R_5/R_6$ and $g_3=(1+R_{10}/(R_9+R_{\rm th}))R_8/(R_7+R_8)$. After hover recalibration,
+\begin{equation}\label{eq:ratio}
+K_f=a_fg_2g_3,\qquad y_\infty/x_\infty=a_r/a_f.
+\end{equation}
+The 2,048 loop-resistor/drag corners yield up to 48.79\% tracking error and 38.95\% overshoot (\Fref{fig:components}). Holding the bias network nominal makes this an optimistic subset, yet it already disproves full component robustness. Joint scalar uncertainty ($0.9b_0$, $1.1K_p$) gives 31.42\% overshoot. Calculations and practical corrections follow in \Aref{app:calculations} and \Sref{sec:evaluation}.
+\page
+
+\section{Controller Tests}\label{sec:tests}
+\subsection{Test Procedure}
+The documented DAQ mapping is DAC-1 for reference, DAC-0 for sensor feedback, ADC-1 for command and ADC-2 for sensor monitoring. Equal reference and sensor inputs are used to trim the zero-error command to 2.500 V. The retained test display then shows an altitude response from near zero to a reference of 5.033 m. The display, including its student identifier and numerical readouts, is preserved in \Aref{app:demo}.
+
+\subsection{Experimental Results}
+At 86.10 s, the recorded reference is 5.033 m and height is 4.897 m. The display reports 0.137 m tracking error, 2.498 V command and 4.553 V sensor output. The computed error $5.033-4.897=0.136$ m differs from the tracking readout by only 0.001 m. The sensor check $4.553/4.896=0.92994$ V/m agrees with Session 1.
+
+The blue response in \Fref{fig:hardware} is digitised from the original screenshot using its 0--120 s and 0--20 m graph axes. Resolution is 0.148 s/pixel and 0.0417 m/pixel. It gives an approximate peak of 6.229 m at 22.02 s. This plot is an estimate from image evidence, not an additional logged trial.
+\fig{hardware_comparison}{.78}{Retained experimental altitude trace compared with the nominal prediction for the same 5.033 m reference.}{fig:hardware}
+The calculated experimental metrics are
+\begin{align}
+\eta_{\rm track}&=100\left(1-\frac{|5.033-4.897|}{5.033}\right)=97.30\%,\\
+M_{p,\rm exp}&\approx100\frac{6.22917-5.033}{5.033-0}=23.77\%.
+\end{align}
+This overshoot uses the commanded step. Peak uncertainty is about 0.83 percentage points per pixel. \Aref{app:calculations} also checks overshoot relative to the terminal height.
+\page
+
+
+\subsection{Performance Analysis}\label{sec:evaluation}
+\Tref{tab:evaluation} compares the retained test and uncertainty predictions with the four laboratory requirements.
+\begin{table}[H]\centering\small
+\caption{Controller evaluation against the laboratory requirements.}\label{tab:evaluation}
+\begin{tabularx}{\linewidth}{p{30mm}XX}\toprule\thead
+Criterion & Evidence & Evaluation\\\midrule
+Tracking $>92\%$ & Accuracy 97.30\%; error 0.136 m. & Pass: retained nominal test.\\
+Overshoot $<30\%$ & Model 25.08\%; experiment 23.77\% about reference, 27.20\% about terminal height. & Pass: nominal responses.\\
+Aerodynamics $\pm10\%$ & Predicted overshoot 21.15--29.45\%. & Pass: drag-only model cases.\\
+Components $\pm10\%$ & Corner error 48.79\%; overshoot 38.95\%. & Fail: independent tolerances.\\\bottomrule
+\end{tabularx}\end{table}
+
+\subsection{Discussion}
+The final display is inside the 8\% reference band but outside the 2\% band. Nominal settling is 54.89 s; experimental 2\% settling is unconfirmed. Joint drag/gain overshoot is 31.42\%. A 2 mV bias predicts 0.150 m displacement (\Fref{fig:disturbance}).
+
+\section{Conclusion and Recommendations}\label{sec:conclusion}
+\subsection{Conclusion}
+Identification supports $G_y(s)=14.2748/[s(8.1s+1)]$ and $k_s=0.93$ V/m. Bias loading gives $K_p\approx0.01432$. Nominal tracking and overshoot pass; component mismatch and joint uncertainty prevent full robustness.
+
+\subsection{Recommendations}\label{sec:recommendations}
+\begin{enumerate}
+\item Match/trim U1 ratios to below 1\% mismatch and verify both signal slopes.
+\item Use matched 680 $\Omega$ U1 resistors: proposed gain 0.00974, joint overshoot 23.44\%.
+\item Recalibrate to 2.500 V; the revised 5 m bias allowance is 3.623 mV.
+\item Retain repeated raw steps and defined disturbance tests to assess robustness.
+\end{enumerate}
+
+\subsection{Final Remarks}
+Calculations are in \Aref{app:calculations}; source files are linked in \Aref{app:repository}. Proposed changes require retesting.
+
+
+================================================================================
+FILE: report/sections/circuit.tex
+================================================================================
+\begin{circuitikz}[american]
+% Default op-amp polarity: upper input is inverting, lower input non-inverting.
+\node[op amp] (a) at (4.5,0) {U1};
+\draw (0,.5) node[left,align=right]{DAC-0\\$y_v$} to[R,l=$R_3\ 100\,\mathrm{k}\Omega$] (2.8,.5) -- (a.-);
+\draw (0,-.5) node[left,align=right]{DAC-1\\$r_v$} to[R,l_=$R_1\ 100\,\mathrm{k}\Omega$] (2.8,-.5) -- (a.+);
+\draw (2.8,-.5) to[R,l=$R_2\ 1\,\mathrm{k}\Omega$] (2.8,-1.9) node[ground]{};
+\draw (a.out)--(6.5,0) node[right]{$V_1$};
+\draw (2.8,.5) -- (2.8,1.45) to[R,l=$R_4\ 1\,\mathrm{k}\Omega$] (6,1.45) -- (6,0);
+\draw (0,.5) -- (0,1.4) node[left]{ADC-2 monitor};
+\node[align=left,anchor=west] at (7.3,.1){$V_1=0.01(r_v-y_v)$\\pin 2: $-$; pin 3: $+$\\pin 6: output};
+\node[anchor=west] at (-1.3,2.45){\textbf{U1: subtract and attenuate}};
+\node[op amp] (c) at (4.5,-4.3){U2};
+\draw (0,-5.9) node[left]{$V_1$} -- (3.25,-5.9) -- (3.25,-4.8) -- (c.+);
+\draw (c.-) -- (2.8,-3.8) to[R,l_=$R_6\ 10\,\mathrm{k}\Omega$] (2.8,-5.2) node[ground]{};
+\draw (c.out) -- (6.5,-4.3) node[right]{$V_2$};
+\draw (2.8,-3.8) -- (2.8,-2.85) to[R,l=$R_5\ 4.7\,\mathrm{k}\Omega$] (6,-2.85) -- (6,-4.3);
+\node[align=left,anchor=west] at (7.3,-4.3){$V_2=1.47V_1$\\pin 3: input\\pin 6: output};
+\node[anchor=west] at (-1.3,-2.0){\textbf{U2: gain 1.47}};
+\node[op amp] (e) at (4.5,-9.2){U3};
+\draw (0,-9.7) node[left]{$V_2$} to[R,l_=$R_7\ 100\,\mathrm{k}\Omega$] (2.8,-9.7) -- (e.+);
+\draw (2.8,-9.7) to[R,l=$R_8\ 100\,\mathrm{k}\Omega$] (2.8,-11.1) node[ground]{};
+\draw (0,-8.7) node[left,align=right]{P1 wiper\\see Figure~\ref*{fig:biasnetwork}} to[R,l=$R_9\ 100\,\mathrm{k}\Omega$] (2.8,-8.7)--(e.-);
+\draw (e.out) -- (6.5,-9.2) node[right]{$u$ (ADC-1)};
+\draw (2.8,-8.7) -- (2.8,-7.75) to[R,l=$R_{10}\ 100\,\mathrm{k}\Omega$] (6,-7.75) -- (6,-9.2);
+\node[align=left,anchor=west] at (7.3,-10.6){$u=g_3V_2+u_0$\\trim $u_0=2.500$ V\\command range: 0--5 V};
+\node[anchor=west] at (-1.3,-6.65){\textbf{U3: calibrated hover bias}};
+\end{circuitikz}
+
+
+================================================================================
+FILE: report/sections/references.tex
+================================================================================
+\addcontentsline{toc}{section}{References}
+\begingroup\small\setlength{\parskip}{2pt}
+\begin{thebibliography}{9}
+\bibitem{lab} University of Cape Town, Department of Electrical Engineering, \emph{EEE3094S Lab 2: Proportional Control}, 2026. Supplied laboratory brief and rubrics.
+\bibitem{template} UCT, \emph{EEE3094S Lab 2/3 LaTeX Example}, supplied template. N. Mathebula, \emph{Lab 2 Report}, 2025, supplied structure example.
+\bibitem{stepinfo} MathWorks, \emph{stepinfo}. \href{https://www.mathworks.com/help/control/ref/dynamicsystem.stepinfo.html}{Online documentation}.
+\bibitem{rlocus} MathWorks, \emph{rlocus}. \href{https://www.mathworks.com/help/control/ref/dynamicsystem.rlocus.html}{Online documentation}.
+\end{thebibliography}\endgroup
+
+
+================================================================================
+FILE: scripts/build.sh
+================================================================================
+#!/usr/bin/env bash
+set -euo pipefail
+task_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$task_root"
+python3 analysis/analyse.py
+python3 scripts/make_indexes.py
+latexmk -pdf -interaction=nonstopmode -halt-on-error -cd calculations/main.tex
+cp calculations/main.pdf calculations/PTRJUN003_Lab2_Calculations.pdf
+latexmk -pdf -interaction=nonstopmode -halt-on-error -cd report/main.tex
+cp report/main.pdf report/PTRJUN003_Lab2_Report.pdf
+python3 scripts/check_report.py
+python3 scripts/make_source_listing.py
+printf 'Built report and calculation PDFs.\n'
+
+
+================================================================================
+FILE: scripts/check_report.py
+================================================================================
+"""Verify the user's page-count rule and all report hyperlinks."""
+
+from pathlib import Path
+from urllib.parse import urlparse
+import json
+from pypdf import PdfReader
+
+ROOT = Path(__file__).resolve().parents[1]
+PDF = ROOT / "report/PTRJUN003_Lab2_Report.pdf"
+REPO = "https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-"
+
+
+def check():
+    reader = PdfReader(PDF)
+    labels = reader.page_labels
+    reference_index = labels.index("R1")
+    intro_index = reference_index - 14
+    main_labels = labels[intro_index:reference_index]
+    assert main_labels == [str(i) for i in range(1, 15)], main_labels
+    assert "Introduction" in reader.pages[intro_index].extract_text()
+    assert "Final Remarks" in reader.pages[reference_index - 1].extract_text()
+    assert labels[reference_index + 1] == "A1"
+    assert "List of Figures" in reader.pages[intro_index - 2].extract_text()
+    assert "List of Tables" in reader.pages[intro_index - 1].extract_text()
+    internal_count = github_count = 0
+    destinations = reader.named_destinations
+    github_urls = set()
+    for page in reader.pages:
+        for item in page.get("/Annots", []):
+            annotation = item.get_object()
+            action = annotation.get("/A", {})
+            if action.get("/S") == "/URI":
+                uri = str(action["/URI"])
+                if uri.startswith(REPO):
+                    assert urlparse(uri).scheme == "https"
+                    github_count += 1
+                    github_urls.add(uri)
+                    for prefix in (REPO + "/tree/main/", REPO + "/blob/main/"):
+                        if uri.startswith(prefix):
+                            assert (ROOT / uri[len(prefix) :]).exists(), uri
+            if action.get("/S") == "/GoTo":
+                destination = action["/D"]
+                if isinstance(destination, str):
+                    assert destination in destinations, destination
+                internal_count += 1
+            assert action.get("/S") != "/Launch"
+    assert github_count > 10
+    assert internal_count > 50
+    assert not any("??" in page.extract_text() for page in reader.pages)
+    result = {
+        "main_pages": 14,
+        "excluded_title_pages": 1,
+        "front_matter_pages": intro_index - 1,
+        "reference_pages": 1,
+        "appendix_pages": len(reader.pages) - reference_index - 1,
+        "total_pages": len(reader.pages),
+        "internal_links": internal_count,
+        "github_links": github_count,
+        "github_urls": sorted(github_urls),
+    }
+    (ROOT / "results/report_checks.json").write_text(
+        json.dumps(result, indent=2) + "\n"
+    )
+    print(json.dumps(result, indent=2))
+
+
+if __name__ == "__main__":
+    check()
+
+
+================================================================================
+FILE: scripts/make_indexes.py
+================================================================================
+"""Make portable clickable indexes for the report's local folder links."""
+
+from pathlib import Path
+from html import escape
+from urllib.parse import quote
+
+ROOT = Path(__file__).resolve().parents[1]
+folders = [
+    ".",
+    "report",
+    "data",
+    "data/session1",
+    "data/session2",
+    "analysis",
+    "matlab",
+    "hardware",
+    "results",
+    "scripts",
+    "config",
+    "calculations",
+    "analysis/modules",
+    "matlab/config",
+    "matlab/identification",
+    "matlab/design",
+    "matlab/validation",
+    "matlab/simulink",
+]
+for folder in folders:
+    p = ROOT / folder
+    links = []
+    for f in sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+        if (
+            f.name.startswith(".")
+            or f.name == "__pycache__"
+            or f.name == "index.html"
+            or f.suffix
+            in [".log", ".aux", ".toc", ".out", ".fls", ".fdb_latexmk", ".lof", ".lot"]
+            or f.name == "main.pdf"
+        ):
+            continue
+        target = quote(f.name) + ("/" if f.is_dir() else "")
+        links.append(
+            '<li><a href="'
+            + target
+            + '">'
+            + escape(f.name)
+            + ("/" if f.is_dir() else "")
+            + "</a></li>"
+        )
+    if folder == ".":
+        links.insert(
+            0, '<li><a href="report/PTRJUN003_Lab2_Report.pdf">Compiled report</a></li>'
+        )
+    title = "EEE3094S Lab 2 / " + folder
+    parent = (
+        ""
+        if folder == "."
+        else '<p><a href="'
+        + ("../" * len(Path(folder).parts))
+        + 'index.html">Project home</a></p>'
+    )
+    html = (
+        '<!doctype html><meta charset="utf-8"><title>'
+        + escape(title)
+        + "</title><style>body{font:16px system-ui;max-width:850px;margin:50px auto;padding:0 25px;color:#174c66}li{margin:12px 0}a{color:#176795}p{line-height:1.6}</style><h1>"
+        + escape(title)
+        + "</h1>"
+        + parent
+        + "<p>Supporting files for Junaid Allan Pieters, PTRJUN003. Open the report for measured results, model predictions and their limits.</p><ul>"
+        + "".join(links)
+        + "</ul>"
+    )
+    (p / "index.html").write_text(html)
+print("Portable folder indexes created.")
+
+
+================================================================================
+FILE: scripts/make_source_listing.py
+================================================================================
+"""Create a complete source listing with an inventory and topic guide."""
+
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+EXTENSIONS = {".py", ".m", ".sh", ".tex", ".asc", ".sch", ".pro"}
+
+
+def build():
+    files = sorted(
+        p
+        for p in ROOT.rglob("*")
+        if p.is_file() and (p.suffix in EXTENSIONS or p.name == "lab_parameters.json")
+    )
+    text = [
+        "COMPLETE ORGANISED SOURCE CODE: PTRJUN003 LAB 2",
+        "Read CODE_GUIDE.md and calculations/PTRJUN003_Lab2_Calculations.pdf first.",
+        "Python generated the report. MATLAB source is supplied and was not executed here.",
+        "",
+        "SOURCE INVENTORY",
+    ]
+    text.extend(str(p.relative_to(ROOT)) for p in files)
+    for path in files:
+        text.extend(
+            [
+                "",
+                "=" * 80,
+                "FILE: " + str(path.relative_to(ROOT)),
+                "=" * 80,
+                path.read_text(),
+            ]
+        )
+    (ROOT / "ALL_SOURCE_CODE.txt").write_text("\n".join(text) + "\n")
+    print(f"Listed {len(files)} source files.")
+
+
+if __name__ == "__main__":
+    build()
+
+
+================================================================================
+FILE: scripts/repository_internal.tex
+================================================================================
+% Internal PDF links work without file-launch support or an unpublished remote.
+\newcommand{\RepoRoot}{}
+\newcommand{\RepoBranch}{main}
+\newcommand{\RepoFile}[2]{\hyperref[app:code]{#2}}
+\expandafter\def\csname folder@config\endcsname{app:code}
+\expandafter\def\csname folder@calculations\endcsname{app:calculations}
+\expandafter\def\csname folder@analysis/modules\endcsname{app:code}
+\expandafter\def\csname folder@matlab/design\endcsname{app:code}
+\expandafter\def\csname folder@matlab/identification\endcsname{app:code}
+\expandafter\def\csname folder@matlab/validation\endcsname{app:code}
+\expandafter\def\csname folder@matlab/simulink\endcsname{app:code}
+\expandafter\def\csname folder@data/session1\endcsname{app:data}
+\expandafter\def\csname folder@data/session2\endcsname{app:demo}
+\expandafter\def\csname folder@hardware\endcsname{app:circuit}
+\expandafter\def\csname folder@analysis\endcsname{app:calculations}
+\expandafter\def\csname folder@results\endcsname{app:validation}
+\expandafter\def\csname folder@matlab\endcsname{app:code}
+\expandafter\def\csname folder@scripts\endcsname{app:repository}
+\expandafter\def\csname folder@report\endcsname{app:repository}
+\newcommand{\RepoLink}[2]{\edef\FolderTarget{\csname folder@#1\endcsname}\hyperref[\FolderTarget]{#2}}
+\newcommand{\RepoStatus}{Supporting files are bundled in the Git project. Links in this edition jump to the corresponding evidence appendix; online folder links require a published repository URL.}
+
+
+================================================================================
+FILE: scripts/set_repository.py
+================================================================================
+"""Configure actual HTTPS folder links, or restore internal evidence links."""
+
+import argparse, re
+from pathlib import Path
+from urllib.parse import urlparse
+
+p = argparse.ArgumentParser()
+p.add_argument(
+    "url", help="Actual HTTPS repository URL, or local for internal PDF links"
+)
+p.add_argument("--branch", default="main")
+a = p.parse_args()
+root = Path(__file__).resolve().parents[1]
+if not re.fullmatch(r"[A-Za-z0-9._/-]+", a.branch):
+    p.error("Unsafe branch name")
+if a.url == "local":
+    text = (root / "scripts/repository_internal.tex").read_text()
+else:
+    url = a.url.rstrip("/").removesuffix(".git")
+    u = urlparse(url)
+    if (
+        u.scheme != "https"
+        or u.netloc not in ["github.com", "gitlab.com"]
+        or u.query
+        or u.fragment
+    ):
+        p.error("Use a plain HTTPS github.com or gitlab.com repository URL")
+    if not re.fullmatch(r"/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", u.path):
+        p.error("Use the repository root URL")
+    tree = "/-/tree/" if u.netloc == "gitlab.com" else "/tree/"
+    text = (
+        r"\newcommand{\RepoRoot}{"
+        + url
+        + "}\n"
+        + r"\newcommand{\RepoBranch}{"
+        + a.branch
+        + "}\n"
+        + r"\newcommand{\RepoLink}[2]{\href{\RepoRoot"
+        + tree
+        + r"\RepoBranch/#1}{#2}}"
+        + "\n"
+        + r"\newcommand{\RepoFile}[2]{\href{\RepoRoot/blob/\RepoBranch/#1}{#2}}"
+        + "\n"
+        + r"\newcommand{\RepoStatus}{The supporting-folder links open the published repository on the configured branch.}"
+        + "\n"
+    )
+(root / "report/repository.tex").write_text(text)
+print("Report links configured. Rebuild the PDF to apply them.")
+

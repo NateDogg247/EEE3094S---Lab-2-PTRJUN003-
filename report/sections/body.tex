@@ -1,0 +1,376 @@
+\section{Introduction}\label{sec:intro}
+\subsection{Overview}
+The Kitticopter laboratory combines a physical analogue controller with a simulated vertical-motion plant through a data-acquisition (DAQ) interface. Session 1 identifies the plant from an applied voltage step. Session 2 uses that model to design, implement and test an altitude controller on Veroboard. The modelling, identification, design and evaluation below follow this experimental sequence \cite{template}.
+
+\subsection{Aim}
+The aim is to regulate altitude using proportional control while satisfying the four requirements in the 2026 laboratory brief \cite{lab}. \Tref{tab:requirements} translates these requirements into quantities that can be checked against the measured and simulated responses.
+\begin{table}[H]\centering\small
+\caption{Laboratory requirements and their evaluation measures.}\label{tab:requirements}
+\begin{tabularx}{\linewidth}{p{37mm}X}\toprule\thead
+Requirement & Evaluation measure\\\midrule
+Tracking accuracy $>92\%$ & $100(1-|x-y_\infty|/|x|)>92\%$ for a nonzero step reference.\\
+Overshoot $<30\%$ & $M_p=100(y_{\max}-y_\infty)/(y_\infty-y_0)<30\%$.\\
+Aerodynamic uncertainty $\pm10\%$ & Vary the identified drag coefficient $b$ by $\pm10\%$, keeping the thrust slope fixed.\\
+Component tolerance $\pm10\%$ & Examine changes in loop gain, reference/feedback ratio and hover bias.\\\bottomrule
+\end{tabularx}\end{table}
+
+\subsection{Objectives}
+\begin{enumerate}
+\item Derive the velocity and position models from the free-body diagram and identify the unknown drag, thrust and sensor parameters.
+\item Differentiate the recorded altitude, calculate the velocity gain and time constant, calibrate the sensor and validate the resulting model.
+\item Select and justify the proportional gain using root-locus and time-response calculations; check the nominal 5 m step and uncertainty cases.
+\item Document the three-stage controller circuit and assess the experimental response against the requirements.
+\end{enumerate}
+
+The analysis uses the supplied identification CSV, circuit design files, Simulink images, board photograph and controller-test display. Photographs and original screenshots are collected in the appendices. All numerical plots in the main report are regenerated from these records or from the stated equations. One identification run and one experimental controller response are retained; repeated-trial averages are therefore not claimed. Reproducible code and worked calculations are available in the \href{\RepoRoot}{GitHub repository}.
+\page
+
+\section{System Modelling}\label{sec:model}
+\subsection{Methodology}
+The laboratory permits a unit-mass model with velocity-proportional aerodynamic drag and constant gravity \cite{lab}. Upward altitude is positive. Newton's second law is applied first, the actuator is linearised around hover, and the Laplace transform then gives a first-order velocity model. Integrating velocity produces the position model used for control.
+
+\subsection{Modelling}
+\subsubsection{Free-Body and Block Diagrams}
+The forces in \Fref{fig:fbd} are upward rotor thrust, downward weight and drag opposing motion. The complete signal-flow diagram is given in \Fref{fig:block}; the notation is defined in \Tref{tab:signals}.
+\begin{figure}[H]\centering
+\begin{tikzpicture}[>=Latex,scale=.9]
+\draw[fill=AngelBlue!22,rounded corners] (-1,-.3) rectangle (1,.3);
+\node at (0,0){unit mass};
+\draw[->,thick] (0,.3)--(0,1.55) node[above]{$f_t(t)$};
+\draw[->,thick] (-.55,-.3)--(-.55,-1.5) node[below left]{$g=9.81\unit{m/s^2}$};
+\draw[->,thick] (.75,-.3)--(.75,-1.5) node[below right]{$b\dot y(t)$};
+\draw[->] (2,-.8)--(2,1) node[above]{$+y$};
+\node[anchor=west,align=left] at (2.6,0){drag shown for\\upward velocity};
+\end{tikzpicture}
+\caption{Free-body diagram of the normalised Kitticopter. Drag reverses direction when velocity reverses.}\label{fig:fbd}
+\end{figure}
+\begin{table}[H]\centering\small
+\caption{Model notation and units.}\label{tab:signals}
+\begin{tabularx}{\linewidth}{lXl}\toprule\thead
+Symbol & Description & Unit\\\midrule
+$x,y,v=\dot y$ & Reference altitude, altitude, vertical velocity & m, m, m/s\\
+$f_t,g,d_a$ & Mass-normalised thrust, gravity, extra disturbance & m/s$^2$\\
+$b$ & Mass-normalised aerodynamic coefficient & s$^{-1}$\\
+$u,u_h,\delta u$ & Command, hover command, $u-u_h$ & V\\
+$k_T$ & Local thrust slope with respect to voltage & m/(s$^2$ V)\\
+$A,\tau$ & Velocity gain and time constant & m/(s V), s\\
+$k_s$ & Position-to-voltage sensor coefficient & V/m\\
+$r_v,y_v,e_v$ & Reference, sensor, error voltage & V\\
+$K_p$ & Controller gain applied to voltage error & V/V\\\bottomrule
+\end{tabularx}\end{table}
+The unknowns required from identification are $A$, $\tau$ and $k_s$, from which $b$ and $k_T$ follow. The hover command is $u_h=2.5$ V, the midpoint of the specified 0--5 V plant-input range.
+\page
+
+\subsubsection{Dynamic Model}\label{sec:dynamic}
+Newton's second law, with mass normalised to one, gives
+\begin{equation}\label{eq:forces}
+\ddot y=f_t-b\dot y-g+d_a.
+\end{equation}
+At hover $f_{t,h}=g$. The local actuator relationship is $f_t=g+k_T(u-u_h)$; substituting this into \Eref{eq:forces} gives
+\begin{equation}\label{eq:dynamic}
+\ddot y+b\dot y=k_T\delta u+d_a,\qquad \delta u=u-u_h.
+\end{equation}
+The hover operating point does not imply $k_T=g/u_h$: the slope must be obtained from the step response. With zero initial conditions and disturbances set to zero,
+\begin{align}
+G_{vf}(s)&=\frac{V(s)}{F_t(s)}=\frac{1}{s+b},\\
+G_v(s)&=\frac{V(s)}{\Delta U(s)}=\frac{k_T}{s+b}=\frac{A}{\tau s+1},\quad
+\tau=\frac1b,\quad A=\frac{k_T}{b},\label{eq:velocityplant}\\
+G_y(s)&=\frac{Y(s)}{\Delta U(s)}=\frac{G_v(s)}s=\frac{A}{s(\tau s+1)}.\label{eq:plant}
+\end{align}
+Thus the velocity response is first order and the position plant is second order. The integrator explains why a nonzero voltage deviation produces an altitude ramp after the velocity transient.
+
+The reference is converted to voltage as $r_v=k_sx$, while the sensor gives $y_v=k_sy$. The implemented control law is
+\begin{equation}\label{eq:law}
+u=\operatorname{sat}_{[0,5]}\{2.5+K_p(r_v-y_v)\}.
+\end{equation}
+\begin{figure}[H]\centering
+\resizebox{\linewidth}{!}{\begin{tikzpicture}[>=Latex,block/.style={draw,fill=AngelBlue!12,minimum height=9mm,minimum width=15mm},sum/.style={draw,circle,inner sep=1pt,minimum size=6mm}]
+\node (x) at (0,0){$x$ (m)};\node[block] (ksr) at (1.5,0){$k_s$};
+\node[sum] (err) at (3,0){$\Sigma$};\node[block] (kp) at (4.4,0){$K_p$};
+\node[sum] (bias) at (5.8,0){$\Sigma$};\node[block] (sat) at (7.3,0){0--5 V};
+\node[sum] (sub) at (9,0){$\Sigma$};\node[block] (gv) at (11,0){$\dfrac{A}{\tau s+1}$};
+\node[block] (int) at (13,0){$1/s$};\node (y) at (14.5,0){$y$ (m)};
+\draw[->] (x)--(ksr);\draw[->] (ksr)--node[above]{$r_v$}(err);\draw[->] (err)--node[above]{$e_v$}(kp);
+\draw[->] (kp)--(bias);\draw[->] (bias)--(sat);\draw[->] (sat)--node[above]{$u$}(sub);
+\draw[->] (sub)--node[above]{$\delta u$}(gv);\draw[->] (gv)--node[above]{$v$}(int);\draw[->] (int)--(y);
+\draw[->] (5.8,1.2)node[above]{$u_h=2.5$ V}--node[right]{$+$}(bias);
+\draw[->] (9,1.2)node[above]{$u_h$}--node[right]{$-$}(sub);
+\node[block] (ksf) at (8,-1.6){$k_s$};
+\draw[->] (13.8,0)|-(ksf);\draw[->] (ksf)-|(err) node[pos=.94,left]{$-$};
+\end{tikzpicture}}
+\caption{Complete voltage/altitude feedback loop. The plant accepts a deviation command after hover subtraction.}\label{fig:block}
+\end{figure}
+\Fref{fig:block} applies $k_s$ once to each altitude signal. The hover terms cancel in the unsaturated deviation model; gravity must not be subtracted a second time. Although Session 2 mentions a 10 V supply restriction, the stricter 0--5 V plant-interface limit is used here.
+\page
+
+\subsubsection{Closed-Loop Representation}
+In the unsaturated region, $\Delta U=K_pk_s(X-Y)$. Substituting into \Eref{eq:plant} and collecting the output terms gives
+\begin{equation}
+Y=G_yK_pk_s(X-Y)\ \Rightarrow\ (1+G_yK_pk_s)Y=G_yK_pk_sX.
+\end{equation}
+Define $q=AK_pk_s$ and $D(s)=\tau s^2+s+q$. The reference and position-error transfer functions are
+\begin{align}
+L(s)&=K_pk_s\frac{A}{s(\tau s+1)},\\
+\frac{Y(s)}{X(s)}&=\frac{L(s)}{1+L(s)}=\frac{q}{D(s)},\label{eq:tracking}\\
+\frac{E_y(s)}{X(s)}&=1-\frac{Y(s)}{X(s)}=\frac{\tau s^2+s}{D(s)},\qquad E_y=X-Y.
+\end{align}
+An additional acceleration enters \Eref{eq:dynamic} directly. Therefore
+\begin{equation}\label{eq:disturbance}
+\frac{Y(s)}{D_a(s)}=\frac{\tau}{D(s)},\qquad
+\frac{Y(s)}{G(s)}=-\frac{\tau}{D(s)}\quad\text{for uncompensated gravity}.
+\end{equation}
+The 2.5 V bias compensates nominal gravity in the actual implementation.
+
+\subsubsection{Steady-State Properties}
+The loop is Type 1 because $L(s)$ contains one pole at the origin. For $K_p>0$, the characteristic polynomial $s^2+bs+k_TK_pk_s$ has positive coefficients and is stable. The final-value theorem gives zero step-reference error. For a ramp $x(t)=a_rt$, $K_v=\lim_{s\to0}sL(s)=AK_pk_s$, so $e_\infty=a_r/K_v$ is finite; a parabolic reference has infinite steady-state error.
+
+A constant disturbance behaves differently from a reference step. Applying the final-value theorem to \Eref{eq:disturbance} gives
+\begin{equation}\label{eq:bias}
+y_\infty-x_\infty=\frac{d_0}{k_TK_pk_s}
+=\frac{\delta u_b}{K_pk_s}\quad\text{when }d_0=k_T\delta u_b.
+\end{equation}
+For a 5 m reference and $K_p=0.01432$, the 8\% error allowance requires
+\begin{equation}
+|\delta u_b|<0.08(5)(0.01432)(0.93)=0.005327\unit{V}.
+\end{equation}
+Hover bias must consequently be calibrated to about 5.3 mV. The brief does not specify disturbance amplitude or injection point; disturbance compliance is evaluated for explicitly defined cases in \Aref{app:calculations}.
+\page
+
+\section{System Identification}\label{sec:id}
+\subsection{Introduction}
+Identification removes the position integrator by differentiating the metre-valued altitude. The resulting first-order velocity response permits independent estimates of DC gain and time constant. The sensor conversion is fitted separately from unsaturated voltage/altitude pairs.
+
+\subsection{Methodology}
+\subsubsection{Step-Testing}
+The Session 1 input circuit described in the brief uses a potentiometer to set the ADC command. The retained record starts at rest near 2.5 V and changes to 5 V. The nominal input increment is $\Delta u=5.0-2.5=2.5$ V. The final voltage is held long enough to identify a steady velocity. \Fref{fig:record} shows the input, position and sensor channels from this run.
+
+\subsection{Experimental Setup and Data Files}
+The \RepoLink{data/session1}{Session 1 data folder} contains the unmodified \texttt{PTRJUN003\_raw.csv}; \Aref{app:data} gives its provenance. Of 1,634 rows, the first 31 precede a clock reset from 9.5 to 0.1 s and contain zero altitude. They are excluded from analysis. The retained 1,603 samples span 0.1--160.3 s at 0.1 s spacing. The reset is not another trial.
+\fig{identification_record}{.84}{Recorded identification input and outputs. The sensor-voltage plateau is clipping at 10 V; altitude continues increasing.}{fig:record}
+\page
+
+\subsection{Data Processing}
+\subsubsection{Velocity Computation}
+The metre channel is differentiated using a backward difference:
+\begin{equation}\label{eq:diff}
+v_i=\frac{y_i-y_{i-1}}{t_i-t_{i-1}},\qquad t_{v,i}=\frac{t_i+t_{i-1}}2.
+\end{equation}
+For example, the 16.9 and 17.0 s positions are 2.256 and 2.703 m, giving $v=(2.703-2.256)/0.1=4.47$ m/s at midpoint 16.95 s. No smoothing is applied. The stored speed column agrees to CSV rounding. Differentiating the clipped voltage channel would incorrectly produce zero velocity; the metre channel avoids this error.
+
+\subsubsection{Estimation of Gain and Time Constant}
+The 404 velocity samples with endpoint time $t\ge120$ s give $v_\infty=35.68748$ m/s. With $v_0=0$,
+\begin{equation}\label{eq:gainid}
+A=\frac{v_\infty-v_0}{\Delta u}=\frac{35.68748-0}{5.0-2.5}
+=14.27499\unit{m/(s\,V)}.
+\end{equation}
+The first-order step response is $v(t)=v_\infty[1-e^{-(t-t_0)/\tau}]$. At one time constant, $1-e^{-1}\approx0.632$, so $v_{63}=0.632(35.68748)=22.55448$ m/s. The measured crossing lies between 24.0 and 24.1 s:
+\begin{align}
+t_{63}&=24.0+\frac{22.55448-22.53}{22.69-22.53}(24.1-24.0)=24.01530\unit{s},\\
+\tau_{63}&=t_{63}-t_0\approx24.01530-15.9=8.11530\unit{s}.
+\end{align}
+A least-squares exponential fit over 17--60 s gives $V_\infty=35.68747$ m/s, $\tau=8.10393$ s and $t_0=15.91584$ s. Endpoint-labelled differences are used in that fit; the midpoint shift is absorbed in $t_0$, leaving $\tau$ unchanged.
+
+\subsubsection{Sensor Calibration (V/m)}
+Using 22 nonzero pairs with $0<y_v<9.9$ V, the zero-intercept least-squares coefficient is
+\begin{equation}\label{eq:sensor}
+k_s=\frac{\sum_i y_i y_{v,i}}{\sum_i y_i^2}=0.9300026\unit{V/m}\approx0.93\unit{V/m}.
+\end{equation}
+The single-point check at 17.0 s is $2.513/2.703=0.92971$ V/m. The regression uses multiple unsaturated pairs rather than the clipped 10 V tail. Full processing equations and selected sample calculations are in \Aref{app:calculations}.
+\page
+
+\subsection{Results and Analysis}
+\subsubsection{Step Response Analysis}
+\Fref{fig:velocity} compares the differentiated measurements with the exponential fit and shows the 63.2\% crossing. Velocity tends to a constant while altitude continues rising, as expected for the lag-plus-integrator model.
+\fig{velocity_identification}{.73}{Velocity identification. The steady tail determines gain; interpolation and fitting determine the time constant.}{fig:velocity}
+\subsubsection{Identification Results}
+\Tref{tab:id} compares the two estimation methods. These are estimates from one run, not independent repeated trials. The rounded parameters reproduce the values used in the supplied Simulink model.
+\begin{table}[H]\centering\small
+\caption{Identification estimates and adopted design parameters.}\label{tab:id}
+\begin{tabular}{lrrr}\toprule\thead
+Method & $A$ [m/(s V)] & $\tau$ [s] & $k_s$ [V/m]\\\midrule
+Tail / 63.2\% crossing & 14.27499 & 8.11530 & ---\\
+Exponential / sensor fit & 14.27499 & 8.10393 & 0.930003\\
+Adopted model & 14.2748 & 8.1000 & 0.9300\\\bottomrule
+\end{tabular}\end{table}
+
+\subsection{Transfer Function Approximation}
+Substitution into \Eref{eq:velocityplant} and \Eref{eq:plant} gives
+\begin{equation}\label{eq:identified}
+\boxed{G_v(s)=\frac{14.2748}{8.1s+1},\qquad
+G_y(s)=\frac{14.2748}{s(8.1s+1)}}.
+\end{equation}
+The physical coefficients follow directly: $b=1/8.1=0.1234568$ s$^{-1}$ and $k_T=A/\tau=14.2748/8.1=1.762321$ m/(s$^2$ V). The differences between fitted and rounded values are small relative to the specified 10\% aerodynamic uncertainty.
+\page
+
+\subsection{Model Validation}\label{sec:validation}
+The rounded model is evaluated over both the fitting interval (17--60 s) and a held-out tail ($t>60$ s). It predicts
+\begin{align}
+v_{\rm mod}(t)&=2.5A(1-e^{-r/\tau}),\\
+y_{\rm mod}(t)&=2.5A\{r-\tau(1-e^{-r/\tau})\},\qquad r=\max(t-t_0,0).
+\end{align}
+The effective onset fitted above is retained. \Fref{fig:validation} checks sensor linearity and velocity residuals; \Tref{tab:validation} reports error magnitudes.
+\fig{validation_sensor}{.91}{Sensor calibration from unsaturated pairs and velocity residuals outside the fitting interval.}{fig:validation}
+\begin{table}[H]\centering\small
+\caption{Validation errors using the rounded design model.}\label{tab:validation}
+\begin{tabularx}{\linewidth}{Xrr}\toprule\thead
+Comparison & Interval [s] & RMSE\\\midrule
+Velocity in fitting window & 17--60 & 0.00533 m/s\\
+Held-out velocity & $>60$ & 0.00436 m/s\\
+Held-out position & $>60$ & 1.686 m\\\bottomrule
+\end{tabularx}\end{table}
+RMSE is $\sqrt{N^{-1}\sum_i(z_i-z_{{\rm mod},i})^2}$. Relative to final velocity, the held-out error is $0.0122\%$. The position comparison in \Fref{fig:posval} reaches almost 4,865 m; small rounding and timing differences accumulate through integration, so its absolute RMSE is larger.
+
+The residuals support the first-order velocity structure and the adopted parameter values for controller design. This validation tests another interval of the same run. It does not establish repeatability across independent experiments or the accuracy of a model-check submission to the laboratory system.
+\page
+
+\section{Controller Design}\label{sec:design}
+\subsection{Design Process}
+\subsubsection{Plant for Design}
+The design uses \Eref{eq:identified}, $k_s=0.93$ V/m and a 2.5 V hover bias. Its characteristic equation is
+\begin{equation}\label{eq:characteristic}
+1+K_pk_sG_y(s)=0\quad\Rightarrow\quad8.1s^2+s+14.2748(0.93)K_p=0.
+\end{equation}
+
+\subsubsection{Design Specifications}
+For a standard underdamped second-order response,
+\begin{equation}\label{eq:overshoot}
+M_p=100e^{-\pi\zeta/\sqrt{1-\zeta^2}},\quad
+M_p<30\%\Rightarrow\zeta>\frac{-\ln0.3}{\sqrt{\pi^2+\ln^20.3}}=0.357857.
+\end{equation}
+Matching the monic form of \Eref{eq:characteristic} to $s^2+2\zeta\omega_ns+\omega_n^2$ yields
+\begin{equation}\label{eq:second}
+\omega_n=\sqrt{\frac{AK_pk_s}{\tau}},\qquad
+\zeta=\frac{1}{2\sqrt{\tau AK_pk_s}},\qquad
+\sigma=\zeta\omega_n=\frac{1}{2\tau}.
+\end{equation}
+Therefore $K_p<1/(4\tau Ak_s\zeta_{\min}^2)=0.0181544$ for nominal overshoot compliance. Type 1 tracking is ideal only after bias and reference/sensor scaling are calibrated. A practical nominal validation target is a 2\% band within 60 s; for drag-only uncertainty, 75 s is reasonable. These are reporting targets added to the four official requirements, not guarantees for uncalibrated component corners.
+
+\subsubsection{Gain Selection (Root Locus)}
+The open-loop poles are $0$ and $-1/\tau=-0.1234568$; there are no finite zeros. The real-axis locus lies between the poles, and its two asymptotes have angles $\pm90^\circ$ about centroid $-1/(2\tau)$. Differentiating $K_p(s)=-s(\tau s+1)/(Ak_s)$ gives
+\begin{equation}
+\frac{dK_p}{ds}=0\Rightarrow s_b=-\frac{1}{2\tau}=-0.0617284,\quad
+K_{p,b}=\frac{1}{4\tau Ak_s}=0.00232489.
+\end{equation}
+The supplied gain $K_p=0.01432$ is above breakaway and below the nominal overshoot limit. Since the complex branches have fixed real part $-0.0617284$, a 30 s decay-envelope target ($\sigma\approx4/30$) cannot be imposed by proportional gain alone. Detailed angle and magnitude checks are in \Aref{app:calculations}; the \RepoLink{matlab/design}{root-locus code folder} reproduces the method.
+\page
+
+\subsubsection{Design Summary}
+Substituting $K_p=0.01432$ gives $q=14.2748(0.01432)(0.93)=0.1901061$ and
+\begin{equation}
+G_{cl}(s)=\frac{0.1901061}{8.1s^2+s+0.1901061}
+=\frac{0.02346989}{s^2+0.1234568s+0.02346989}.
+\end{equation}
+The roots and response quantities in \Tref{tab:design} are calculated from \Eref{eq:second} and checked against \Fref{fig:locus}.
+\begin{table}[H]\centering\small
+\caption{Manual nominal-controller calculations.}\label{tab:design}
+\begin{tabularx}{\linewidth}{lXr}\toprule\thead
+Quantity & Calculation & Result\\\midrule
+Natural frequency & $\sqrt{0.1901061/8.1}$ & 0.153199 rad/s\\
+Damping ratio & $1/[2\sqrt{8.1(0.1901061)}]$ & 0.402930\\
+Damped frequency & $\omega_n\sqrt{1-\zeta^2}$ & 0.140212 rad/s\\
+Closed-loop poles & $-\sigma\pm j\omega_d$ & $-0.0617284\pm j0.140212$\\
+Overshoot & $100e^{-\pi(0.402930)/\sqrt{1-0.402930^2}}$ & 25.0804\%\\
+Peak time & $\pi/0.140212$ & 22.4060 s\\
+Peak altitude & $5(1+0.250804)$ & 6.25402 m\\\bottomrule
+\end{tabularx}\end{table}
+\fig{root_locus}{.86}{Proportional root locus. The selected poles satisfy the 30\% overshoot boundary; the 30 s envelope target is beyond the attainable complex branches.}{fig:locus}
+The exact step response is
+\begin{equation}\label{eq:exactstep}
+y(t)=5\!\left[1-e^{-\sigma t}\!\left(\cos\omega_dt+\frac{\sigma}{\omega_d}\sin\omega_dt\right)\right].
+\end{equation}
+The usual $4/\sigma=64.8$ s settling approximation is conservative here. The envelope bound $-\ln[0.02\sqrt{1-\zeta^2}]/\sigma=64.81$ s and the actual final 2\% crossing, 54.89 s, are different quantities.
+\page
+
+\subsection{Simulink Model Design}\label{sec:simulation}
+\subsubsection{Block Diagram Implementation}
+The implementation follows \Fref{fig:block}: reference scaling, error subtraction, $K_p$, hover addition, 0--5 V saturation, hover subtraction, the velocity lag and an integrator. The original model and scope are in \Aref{app:simulink}. The supplied scope includes startup from zero while the reference begins at 2.5 m. For an unambiguous demonstration test, the regenerated model uses zero initial altitude/velocity and a 0 to 5 m reference step.
+
+\subsubsection{Representative Simulation Results}
+Python evaluates \Eref{eq:exactstep} on a 0.005 s grid. \Fref{fig:nominal} shows altitude and the corresponding command. The \RepoLink{matlab}{MATLAB folder} contains independent verification and a Simulink model-building script; those scripts are supplied for execution in MATLAB.
+\fig{nominal_response}{.76}{Nominal 5 m step prediction, with the 2\% altitude band and actuator command.}{fig:nominal}
+The simulated peak is 6.25402 m at 22.405 s, agreeing with \Tref{tab:design}. The final reference-band entry is $T_{s,2\%}=54.89$ s. Command limits are inactive: $u(0^+)=2.5+0.01432(0.93)(5)=2.56659$ V and $u_{\min}=2.48330$ V. The nominal 60 s target is met.
+
+For aerodynamic uncertainty, $b$ varies while $k_T$ remains fixed; $\tau=1/b$ and $A=k_T/b$ therefore vary together. \Tref{tab:aero} and \Fref{fig:aero} show that drag uncertainty alone satisfies the 30\% limit and proposed 75 s target.
+\begin{table}[H]\centering\small
+\caption{Predicted performance under aerodynamic uncertainty.}\label{tab:aero}
+\begin{tabular}{lrrr}\toprule\thead
+Drag & Peak [m] & Overshoot [\%] & $T_{s,2\%}$ [s]\\\midrule
+$0.9b_0$ & 6.473 & 29.45 & 70.80\\
+$b_0$ & 6.254 & 25.08 & 54.89\\
+$1.1b_0$ & 6.058 & 21.15 & 54.59\\\bottomrule
+\end{tabular}\end{table}
+\page
+
+\subsubsection{Controller Hardware Implementation}\label{sec:hardware}
+The controller uses a difference amplifier, a non-inverting amplifier and a biased output stage. The labelled circuit is in \Fref{fig:circuit}; the final Veroboard photograph is in \Fref{fig:board}. The supplied circuit files establish the design values in \Tref{tab:components}; the photograph alone cannot verify the underside wiring.
+\begin{table}[H]\centering\small
+\caption{Documented circuit components and nominal stage functions.}\label{tab:components}
+\begin{tabularx}{\linewidth}{p{20mm}p{48mm}X}\toprule\thead
+Stage & Values & Function\\\midrule
+U1 & $R_1=R_3=100$ k$\Omega$; $R_2=R_4=1$ k$\Omega$ & $V_1=0.01(r_v-y_v)$; reference on $+$, sensor on $-$.\\
+U2 & $R_5=4.7$ k$\Omega$; $R_6=10$ k$\Omega$ & $V_2=(1+R_5/R_6)V_1=1.47V_1$.\\
+U3 & $R_7$--$R_{10}=100$ k$\Omega$ & Positive proportional correction plus adjustable 2.5 V bias.\\
+Bias & $R_{11}=3.9$ k$\Omega$ to ground; $R_{12}=1.2$ k$\Omega$ across P1; $R_{13}=22$ k$\Omega$ to $-15$ V; P1 = 10 k$\Omega$ & Loaded wiper feeds $R_9$; trim at equal reference and sensor inputs.\\
+Supply & Three 741-type stages, $\pm15$ V; six 100 nF capacitors in design & Common DAQ ground; one capacitor from each rail to ground at each op-amp.\\\bottomrule
+\end{tabularx}\end{table}
+The unloaded product $0.01(1.47)=0.0147$ overestimates gain. At the calibrated setting $W=0.783081$, the bias network has $V_{\rm th}=-2.635575$ V and $R_{\rm th}=5.423001$ k$\Omega$. Thus
+\begin{align}
+u_0&=-\frac{100}{100+5.423001}(-2.635575)=2.500000\unit{V},\\
+K_{p,\rm circuit}&=0.01(1.47)\frac{1+100/(100+5.423001)}2=0.0143219.
+\end{align}
+This agrees with the simulation gain to 0.014\%. \Aref{app:circuit} gives the complete loading derivation, rail connections and DAQ mapping.
+
+Independent resistor variation also changes the reference/feedback ratio. Let $a_f=R_4/R_3$, $a_r=(1+a_f)R_2/(R_1+R_2)$, $g_2=1+R_5/R_6$ and $g_3=(1+R_{10}/(R_9+R_{\rm th}))R_8/(R_7+R_8)$. After hover recalibration,
+\begin{equation}\label{eq:ratio}
+K_f=a_fg_2g_3,\qquad y_\infty/x_\infty=a_r/a_f.
+\end{equation}
+The 2,048 loop-resistor/drag corners yield up to 48.79\% tracking error and 38.95\% overshoot (\Fref{fig:components}). Holding the bias network nominal makes this an optimistic subset, yet it already disproves full component robustness. Joint scalar uncertainty ($0.9b_0$, $1.1K_p$) gives 31.42\% overshoot. Calculations and practical corrections follow in \Aref{app:calculations} and \Sref{sec:evaluation}.
+\page
+
+\section{Controller Tests}\label{sec:tests}
+\subsection{Test Procedure}
+The documented DAQ mapping is DAC-1 for reference, DAC-0 for sensor feedback, ADC-1 for command and ADC-2 for sensor monitoring. Equal reference and sensor inputs are used to trim the zero-error command to 2.500 V. The retained test display then shows an altitude response from near zero to a reference of 5.033 m. The display, including its student identifier and numerical readouts, is preserved in \Aref{app:demo}.
+
+\subsection{Experimental Results}
+At 86.10 s, the recorded reference is 5.033 m and height is 4.897 m. The display reports 0.137 m tracking error, 2.498 V command and 4.553 V sensor output. The computed error $5.033-4.897=0.136$ m differs from the tracking readout by only 0.001 m. The sensor check $4.553/4.896=0.92994$ V/m agrees with Session 1.
+
+The blue response in \Fref{fig:hardware} is digitised from the original screenshot using its 0--120 s and 0--20 m graph axes. Resolution is 0.148 s/pixel and 0.0417 m/pixel. It gives an approximate peak of 6.229 m at 22.02 s. This plot is an estimate from image evidence, not an additional logged trial.
+\fig{hardware_comparison}{.78}{Retained experimental altitude trace compared with the nominal prediction for the same 5.033 m reference.}{fig:hardware}
+The calculated experimental metrics are
+\begin{align}
+\eta_{\rm track}&=100\left(1-\frac{|5.033-4.897|}{5.033}\right)=97.30\%,\\
+M_{p,\rm exp}&\approx100\frac{6.22917-5.033}{5.033-0}=23.77\%.
+\end{align}
+This overshoot uses the commanded step. Peak uncertainty is about 0.83 percentage points per pixel. \Aref{app:calculations} also checks overshoot relative to the terminal height.
+\page
+
+
+\subsection{Performance Analysis}\label{sec:evaluation}
+\Tref{tab:evaluation} compares the retained test and uncertainty predictions with the four laboratory requirements.
+\begin{table}[H]\centering\small
+\caption{Controller evaluation against the laboratory requirements.}\label{tab:evaluation}
+\begin{tabularx}{\linewidth}{p{30mm}XX}\toprule\thead
+Criterion & Evidence & Evaluation\\\midrule
+Tracking $>92\%$ & Accuracy 97.30\%; error 0.136 m. & Pass: retained nominal test.\\
+Overshoot $<30\%$ & Model 25.08\%; experiment 23.77\% about reference, 27.20\% about terminal height. & Pass: nominal responses.\\
+Aerodynamics $\pm10\%$ & Predicted overshoot 21.15--29.45\%. & Pass: drag-only model cases.\\
+Components $\pm10\%$ & Corner error 48.79\%; overshoot 38.95\%. & Fail: independent tolerances.\\\bottomrule
+\end{tabularx}\end{table}
+
+\subsection{Discussion}
+The final display is inside the 8\% reference band but outside the 2\% band. Nominal settling is 54.89 s; experimental 2\% settling is unconfirmed. Joint drag/gain overshoot is 31.42\%. A 2 mV bias predicts 0.150 m displacement (\Fref{fig:disturbance}).
+
+\section{Conclusion and Recommendations}\label{sec:conclusion}
+\subsection{Conclusion}
+Identification supports $G_y(s)=14.2748/[s(8.1s+1)]$ and $k_s=0.93$ V/m. Bias loading gives $K_p\approx0.01432$. Nominal tracking and overshoot pass; component mismatch and joint uncertainty prevent full robustness.
+
+\subsection{Recommendations}\label{sec:recommendations}
+\begin{enumerate}
+\item Match/trim U1 ratios to below 1\% mismatch and verify both signal slopes.
+\item Use matched 680 $\Omega$ U1 resistors: proposed gain 0.00974, joint overshoot 23.44\%.
+\item Recalibrate to 2.500 V; the revised 5 m bias allowance is 3.623 mV.
+\item Retain repeated raw steps and defined disturbance tests to assess robustness.
+\end{enumerate}
+
+\subsection{Final Remarks}
+Calculations are in \Aref{app:calculations}; source files are linked in \Aref{app:repository}. Proposed changes require retesting.

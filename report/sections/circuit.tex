@@ -1,0 +1,27 @@
+\begin{circuitikz}[american]
+% Default op-amp polarity: upper input is inverting, lower input non-inverting.
+\node[op amp] (a) at (4.5,0) {U1};
+\draw (0,.5) node[left,align=right]{DAC-0\\$y_v$} to[R,l=$R_3\ 100\,\mathrm{k}\Omega$] (2.8,.5) -- (a.-);
+\draw (0,-.5) node[left,align=right]{DAC-1\\$r_v$} to[R,l_=$R_1\ 100\,\mathrm{k}\Omega$] (2.8,-.5) -- (a.+);
+\draw (2.8,-.5) to[R,l=$R_2\ 1\,\mathrm{k}\Omega$] (2.8,-1.9) node[ground]{};
+\draw (a.out)--(6.5,0) node[right]{$V_1$};
+\draw (2.8,.5) -- (2.8,1.45) to[R,l=$R_4\ 1\,\mathrm{k}\Omega$] (6,1.45) -- (6,0);
+\draw (0,.5) -- (0,1.4) node[left]{ADC-2 monitor};
+\node[align=left,anchor=west] at (7.3,.1){$V_1=0.01(r_v-y_v)$\\pin 2: $-$; pin 3: $+$\\pin 6: output};
+\node[anchor=west] at (-1.3,2.45){\textbf{U1: subtract and attenuate}};
+\node[op amp] (c) at (4.5,-4.3){U2};
+\draw (0,-5.9) node[left]{$V_1$} -- (3.25,-5.9) -- (3.25,-4.8) -- (c.+);
+\draw (c.-) -- (2.8,-3.8) to[R,l_=$R_6\ 10\,\mathrm{k}\Omega$] (2.8,-5.2) node[ground]{};
+\draw (c.out) -- (6.5,-4.3) node[right]{$V_2$};
+\draw (2.8,-3.8) -- (2.8,-2.85) to[R,l=$R_5\ 4.7\,\mathrm{k}\Omega$] (6,-2.85) -- (6,-4.3);
+\node[align=left,anchor=west] at (7.3,-4.3){$V_2=1.47V_1$\\pin 3: input\\pin 6: output};
+\node[anchor=west] at (-1.3,-2.0){\textbf{U2: gain 1.47}};
+\node[op amp] (e) at (4.5,-9.2){U3};
+\draw (0,-9.7) node[left]{$V_2$} to[R,l_=$R_7\ 100\,\mathrm{k}\Omega$] (2.8,-9.7) -- (e.+);
+\draw (2.8,-9.7) to[R,l=$R_8\ 100\,\mathrm{k}\Omega$] (2.8,-11.1) node[ground]{};
+\draw (0,-8.7) node[left,align=right]{P1 wiper\\see Figure~\ref*{fig:biasnetwork}} to[R,l=$R_9\ 100\,\mathrm{k}\Omega$] (2.8,-8.7)--(e.-);
+\draw (e.out) -- (6.5,-9.2) node[right]{$u$ (ADC-1)};
+\draw (2.8,-8.7) -- (2.8,-7.75) to[R,l=$R_{10}\ 100\,\mathrm{k}\Omega$] (6,-7.75) -- (6,-9.2);
+\node[align=left,anchor=west] at (7.3,-10.6){$u=g_3V_2+u_0$\\trim $u_0=2.500$ V\\command range: 0--5 V};
+\node[anchor=west] at (-1.3,-6.65){\textbf{U3: calibrated hover bias}};
+\end{circuitikz}

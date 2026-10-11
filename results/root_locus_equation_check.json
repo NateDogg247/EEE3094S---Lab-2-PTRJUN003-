@@ -1,0 +1,17 @@
+{
+  "selected_poles": [
+    [
+      -0.06172839506172839,
+      0.14021230769190116
+    ],
+    [
+      -0.06172839506172839,
+      -0.14021230769190116
+    ]
+  ],
+  "gain_from_magnitude": 0.014319999999999996,
+  "root_locus_angle_deg": -180.0,
+  "overshoot_percent": 25.080374648985497,
+  "settling_2percent_sampled_s": 54.89,
+  "validation": "Independent Python/SciPy equations agree with saved report; MATLAB not executed."
+}
