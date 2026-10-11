@@ -1,0 +1,26 @@
+{
+  "status": "PASS",
+  "connected_nets": 16,
+  "intentional_unused_pins": [
+    "U1.1",
+    "U1.5",
+    "U1.8",
+    "U2.1",
+    "U2.5",
+    "U2.8",
+    "U3.1",
+    "U3.5",
+    "U3.8"
+  ],
+  "components": 25,
+  "nominal_ideal_DC": {
+    "P1_fraction_from_pin_1": 0.7830805940823569,
+    "bias_open_circuit_V": -2.6355750361984382,
+    "bias_thevenin_ohm": 5423.001447937544,
+    "U2_gain": 1.47,
+    "U3_incremental_gain": 0.9742797996003953,
+    "Kp_V_per_V": 0.014321913054125812,
+    "zero_error_command_V": 2.4999999999999996
+  },
+  "scope": "KiCad XML netlist topology and ideal nominal DC; no hardware measurements or ERC"
+}

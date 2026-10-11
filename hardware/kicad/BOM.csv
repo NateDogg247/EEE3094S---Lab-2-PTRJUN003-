@@ -1,22 +1,26 @@
-Ref,Value,Description
-U1,LM741,Subtractor / attenuator
-U2,LM741,Non-inverting gain stage
-U3,LM741,Bias/summing stage
-R1,100k,U1 VREF input
-R2,1k,U1 non-inverting divider to GND
-R3,100k,U1 VSENSE input
-R4,1k,U1 feedback
-R5,4.7k,U2 feedback
-R6,10k,U2 inverting leg to GND
-R7,100k,U3 non-inverting input from U2
-R8,100k,U3 non-inverting divider to GND
-R9,100k,U3 bias input
-R10,100k,U3 feedback
-R11,3.9k,Bias network upper resistor
-P1,10k,Bias adjustment potentiometer
-R12,1.2k,Shunt across P1
-R13,22k,Bias network lower resistor
-C1-C6,100n,Supply decoupling
-J1,2-pin,"DAC-1 VREF, DAC-0 VSENSE"
-J2,2-pin,"ADC-1 command, ADC-2 sensor monitor"
-J3,3-pin,"+15 V, GND, -15 V"
+Reference,Value,Symbol,Footprint
+U1,LM741,LM741,Package_DIP:DIP-8_W7.62mm
+U2,LM741,LM741,Package_DIP:DIP-8_W7.62mm
+U3,LM741,LM741,Package_DIP:DIP-8_W7.62mm
+R3,100k,R_US,
+R1,100k,R_US,
+R4,1k,R_US,
+R2,1k,R_US,
+R5,4.7k,R_US,
+R6,10k,R_US,
+R9,100k,R_US,
+R7,100k,R_US,
+R10,100k,R_US,
+R8,100k,R_US,
+R11,3.9k,R_US,
+P1,10k,R_Potentiometer_US,
+R13,22k,R_US,
+R12,1.2k,R_US,
+J1,DAQ interface,Conn_01x05,
+J2,Bench supply,Conn_01x03,
+C1,100nF,C,
+C2,100nF,C,
+C3,100nF,C,
+C4,100nF,C,
+C5,100nF,C,
+C6,100nF,C,
