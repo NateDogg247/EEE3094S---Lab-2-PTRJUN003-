@@ -87,3 +87,7 @@ https://github.com/NateDogg247/EEE3094S---Lab-2-PTRJUN003-/tree/main/hardware/ki
 
 The bundled library symbols come from KiCad's official symbol libraries.
 See `KiCad-symbols-COPYRIGHT.txt` for attribution and licence terms.
+
+The report now uses enlarged native SVG stage panels instead of shrinking the complete circuit into one figure. Component references and values are on separate lines, and all original nets are preserved. `export_report_panels.py` regenerates the stage and bias views from a KiCad CLI SVG export; Inkscape converts these to vector PDF and PNG.
+
+`style_reference.png` retains the supplied one-op-amp visual reference. Its 120 k/330 ohm values belong to that example, not this three-stage controller.

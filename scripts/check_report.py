@@ -14,14 +14,15 @@ def check():
     reader = PdfReader(PDF)
     labels = reader.page_labels
     reference_index = labels.index("R1")
-    intro_index = reference_index - 14
+    intro_index = reference_index - 9
     main_labels = labels[intro_index:reference_index]
-    assert main_labels == [str(i) for i in range(1, 15)], main_labels
-    assert "Introduction" in reader.pages[intro_index].extract_text()
-    assert "Final Remarks" in reader.pages[reference_index - 1].extract_text()
+    assert main_labels == [str(i) for i in range(1, 10)], main_labels
+    assert "System Modelling" in reader.pages[intro_index].extract_text()
+    assert "Conclusion and Recommendations" in reader.pages[reference_index - 1].extract_text()
+    assert len(reader.pages) - reference_index - 1 == 3
     assert labels[reference_index + 1] == "A1"
-    assert "List of Figures" in reader.pages[intro_index - 2].extract_text()
-    assert "List of Tables" in reader.pages[intro_index - 1].extract_text()
+    assert len(reader.pages) == 15
+    assert "Contents" in reader.pages[1].extract_text()
     internal_count = github_count = 0
     destinations = reader.named_destinations
     github_urls = set()
@@ -48,7 +49,7 @@ def check():
     assert internal_count > 50
     assert not any("??" in page.extract_text() for page in reader.pages)
     result = {
-        "main_pages": 14,
+        "main_pages": 9,
         "excluded_title_pages": 1,
         "front_matter_pages": intro_index - 1,
         "reference_pages": 1,

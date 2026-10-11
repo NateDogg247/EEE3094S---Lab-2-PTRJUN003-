@@ -1,6 +1,6 @@
 # MATLAB code
 
-Set Current Folder to this directory and run `run_all`, or `root_locus_design` for the root-locus method alone.
+Set Current Folder to this directory and run `run_all`, or `addpath(genpath(pwd)); run_root_locus_design(lab_parameters)` for the root-locus method alone.
 
 Implementations are divided into `config`, `identification`, `design`, `validation`, `plots` and `simulink`. Parameters are read from the project root's `config/lab_parameters.json`.
 

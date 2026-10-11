@@ -17,3 +17,13 @@ repository.bundle
 /*.fls
 /*.fdb_latexmk
 /main.pdf
+
+# LaTeX intermediate files in all source folders
+*.aux
+*.log
+*.toc
+*.out
+*.fls
+*.fdb_latexmk
+*.lof
+*.lot

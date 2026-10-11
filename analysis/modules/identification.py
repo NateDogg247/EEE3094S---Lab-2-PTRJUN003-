@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.optimize import least_squares
+from scipy.integrate import solve_ivp
 from .plot_style import BLUE, ORANGE, GREEN, RED, exporter
 
 
@@ -59,6 +60,21 @@ def run(project_root, parameters):
 
     vv = pred_vel(t)
     yy = pred_pos(t)
+    # Independent input treatment: retain the measured finite transition.
+    # Initial velocity is zero at 15.7 s, immediately before the manual change.
+    measured_times = t[t >= 15.7]
+    measured_input = solve_ivp(
+        lambda tt, state: [(A * (np.interp(tt, t, u) - parameters.hover_v) - state[0]) / tau],
+        [15.7, float(t[-1])], [0.0], t_eval=measured_times,
+        rtol=1e-8, atol=1e-9, max_step=0.05,
+    )
+    if not measured_input.success:
+        raise RuntimeError(measured_input.message)
+    measured_v = measured_input.y[0]
+    measured_fit = (measured_times >= 17) & (measured_times <= 60)
+    measured_valid = measured_times > 60
+    pd.DataFrame({'time_s': measured_times, 'velocity_from_measured_input_mps': measured_v}).to_csv(
+        RES / 'session1_measured_input_validation.csv', index=False)
     train = (t >= 17) & (t <= 60)
     valid = t > 60
 
@@ -88,6 +104,10 @@ def run(project_root, parameters):
         "nominal_kp": kp,
         "b": b,
         "kT": kt,
+        "measured_input_velocity_rmse_fit_window": rmse(v[t >= 15.7][measured_fit], measured_v[measured_fit]),
+        "measured_input_velocity_rmse_holdout": rmse(v[t >= 15.7][measured_valid], measured_v[measured_valid]),
+        "parameter_checker": {"A_score_percent":100, "tau_score_percent":96, "sensor_score_percent":100,
+                              "provenance":"Supplied Helicopter Parameter Check screenshot; not confidence intervals"},
     }
     d["Velocity(m/s)"] = v
     d["Velocity_time_midpoint(s)"] = vmid
@@ -109,10 +129,20 @@ def run(project_root, parameters):
     axs[2].text(45, 4.5, "Voltage clips at 10 V; metre channel keeps increasing")
     fig.tight_layout()
     save(fig, "identification_record")
+    fig, ax = plt.subplots(figsize=(7.1, 2.3))
+    zoom = (t >= 14.5) & (t <= 17.5)
+    ax.plot(t[zoom], u[zoom], 'o-', ms=3, color=blue, label='Logged manual input')
+    ax.plot([14.5,15.9,15.9,17.5], [2.5,2.5,5,5], '--', color=orange,
+            label='Ideal step approximation, 2.5 V increment')
+    ax.set(xlabel='Retained run time (s)', ylabel='Input command (V)', xlim=(14.5,17.5), ylim=(2.35,5.15))
+    ax.legend(fontsize=9, loc='lower right')
+    save(fig, 'step_input_transition')
     fig, ax = plt.subplots(figsize=(7.1, 3.5))
     q = t - 15.9
     ax.plot(q, v, color=blue, lw=1, label="Backward difference of position")
     ax.plot(q, vv, "--", color=orange, label="First-order model")
+    ax.plot(measured_times-15.9, measured_v, ':', color=red, lw=1.2,
+            label='Model driven by recorded input')
     ax.axhline(target, color=green, ls=":", label=f"63.2% = {target:.3f} m/s")
     ax.axvline(t63 - 15.9, color=green, ls=":")
     ax.axhline(ss, color="gray", ls=":")

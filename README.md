@@ -2,11 +2,11 @@
 
 Junaid Allan Pieters — Proportional Control of the Kitticopter, University of Cape Town.
 
-- [Report PDF](report/PTRJUN003_Lab2_Report.pdf): exactly **14 main pages**, excluding the title, contents, figure/table lists, references and appendices.
+- [Report PDF](report/PTRJUN003_Lab2_Report.pdf): **9 main pages and 3 appendix pages; 15 PDF pages in total**, including a cover, contents and references in the total.
 - [Worked calculations PDF](calculations/PTRJUN003_Lab2_Calculations.pdf): identification, root locus, response, circuit loading, robustness and experimental metrics.
 - [Code guide](CODE_GUIDE.md): module responsibilities and instructions.
 
-The report follows the supplied previous-year example with numbered chapter headings, a Prepared by / Prepared for cover, a separate conclusion page and a calculation/simulation/experiment comparison. It retains the template's Computer Modern font, 12 pt text, one-inch margins and spacing, with angel-blue accents and the UCT logo. Physical photos and the required controller-demonstration screenshot are in the appendices. The supplied Simulink diagram and revised KiCad schematic are in the main report; all numerical plots are rendered by Python with MATLAB counterparts. Click the plot itself or its caption to open the relevant GitHub folder. Internal references and GitHub folder/file links are clickable.
+The report follows the four required sections: System Modelling, System Identification, Controller Design and Controller Tests. It retains Computer Modern 12 pt text, angel-blue accents and the UCT logo; text, figures, captions, equations and tables are left aligned. Original parameter-check, board and demo evidence occupy two appendix pages; essential circuit and root-locus calculations occupy one more. Full identification calculations remain in the standalone supplement. The supplied Simulink model and enlarged KiCad stages are in the main text, with the original scope retained in the appendix. Numerical plots are rendered by Python and have MATLAB reproduction code. Figures and cross-references link directly to the supporting GitHub folders.
 
 ## Project map
 
@@ -18,6 +18,7 @@ The report follows the supplied previous-year example with numbered chapter head
 | [calculations](calculations) | Worked calculation PDF, equation source and topic index |
 | [data/session1](data/session1) | Original identification CSV |
 | [data/session2](data/session2) | Supplied experimental and Simulink screenshots |
+| [data/rubric](data/rubric) | Original supplied marking rubric images |
 | [hardware](hardware) | Circuit sources, component information and board photograph |
 | [results](results) | Processed data, numerical traces, uncertainty corners and metrics |
 | [report](report) | LaTeX source, figures and compiled report |
@@ -45,7 +46,8 @@ run_all
 For the detailed root locus method alone:
 
 ```matlab
-root_locus_design
+addpath(genpath(pwd));
+run_root_locus_design(lab_parameters)
 ```
 
 Control System Toolbox is required. Simulink is required for the model builder and native test runner. The standalone `plot_report_figures` uses analytical formulas without Control System Toolbox. MATLAB source is supplied but was not executed in the authoring environment; Python reproduced the saved numerical results.
@@ -64,7 +66,7 @@ For LaTeX-only compilation, select the root `main.tex` in Overleaf. The calculat
 
 The adopted plant is `14.2748/[s(8.1s+1)]`, sensor gain is 0.93 V/m, and report controller gain is 0.01432 V/V. Identification uses a 2.5 to 5.0 V actuator step, increment 2.5 V. The nominal controller demonstration uses a 0 to 5 m position reference.
 
-Nominal prediction: 25.08% overshoot and 54.89 s settling in the 2% reference band. The retained hardware display gives 97.30% tracking and about 23.77% overshoot about the commanded reference. Independent resistor mismatch and joint drag/gain uncertainty do not establish full robustness. Repeated trials, raw Session 2 logs and a signed demonstration mark were not supplied.
+Nominal prediction: 25.08% overshoot and 54.89 s settling in the 2% reference band. The retained hardware display gives 97.30% tracking and about 23.77% overshoot about the commanded reference. Independent resistor mismatch and joint drag/gain uncertainty do not establish full robustness. The student reports a full demo mark. Repeated identification trials and raw Session 2 logs were not supplied.
 
 ## Repository
 
@@ -83,3 +85,5 @@ Rebuild the PDF after changing link settings. See [RUBRIC_REVIEW.md](RUBRIC_REVI
 The full three-op-amp circuit remained connected for the physical controller test. The physical potentiometer was adjusted until the input was approximately 2.565 V. This recalled observation is recorded separately from the nominal 2.500 V zero-error hover condition and the terminal 2.498 V display. See `data/session2/test_conditions.json` and the report adjustment calculation.
 
 The current KiCad drawing contains no capacitors, no unused pin-1/pin-5 graphics or crosses, and no opening title/subtitle. Open `hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_pro`.
+
+The first-logging CSV reattached in this revision is byte-identical to the retained data. The manual input reaches 5 V through 2.908 V at 15.8 s and 4.607 V at 15.9 s; the report shows and checks this finite transition. The parameter-check screenshot records A=14.2748 (100%), tau=8.1 (96%) and sensor=0.93 (100%).

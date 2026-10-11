@@ -1,361 +1,57 @@
-\section{Photographs of the Final Controller}\label{app:photos}
-\Fref{fig:board} documents the soldered Veroboard implementation described in \Sref{sec:hardware}. The board has three eight-pin op-amp packages and a blue bias trimmer. The photograph records the final physical assembly; it does not establish every underside connection or measured resistance.
-\repfig{hardware}{../../hardware/veroboard.jpeg}{.84}{Supplied final Veroboard photograph. The three op-amp stages and adjustable bias trimmer are visible.}{fig:board}
-The circuit design specifies 741-type devices and bipolar supply rails. The current KiCad drawing contains no capacitors and hides unused offset-pin graphics. Device markings and underside wiring are not independently established by this top-side photograph. No photographs of handwritten calculations are used in this report.
-\page
-
-\section{Experimental Demonstration Record}\label{app:demo}
-The original controller-test display is retained in the \RepoLink{data/session2}{Session 2 evidence folder}. The altitude trace is replotted with Python in \Fref{fig:hardware}. The original application screenshot below is supporting demonstration evidence; the main numerical comparison is the regenerated Python plot.
-
-The full controller was connected during this test, as confirmed in \Sref{sec:tests}. The student also reported adjusting the physical potentiometer until the input was approximately 2.565 V. This recollection is separate from the later terminal readouts below.
-
-\repfig{data/session2}{../../data/session2/hardware_step_test.jpeg}{.90}{Original controller-demonstration screenshot from the laboratory application, retained as required evidence. The numerical response is replotted in \Fref{fig:hardware}.}{fig:demo}
-The numerical values transcribed in \Tref{tab:display} support the tracking and sensor checks.
-\begin{table}[H]\centering\small
-\caption{Numerical readouts transcribed from the retained test display.}\label{tab:display}
-\begin{tabular}{lr}\toprule\thead
-Field & Displayed value\\\midrule
-Student number & PTRJUN003\\
-Set point & 5.033 m\\
-Height & 4.897 m\\
-Tracking error & 0.137 m\\
-Angle of attack / command & 2.498 V\\
-Height (left panel) & 4.896 m\\
-Sensor output (left panel) & 4.553 V\\
-Elapsed time & 86.10 s\\\bottomrule
-\end{tabular}\end{table}
-The 0.001 m differences between the readouts are consistent with rounding or asynchronous display updates. The assessor's marking sheet and signature were not supplied, so an awarded demonstration mark is not claimed.
-\page
-
-\section{Simulink Configuration and Reproduction}\label{app:simulink}
-The supplied model diagram appears in \Fref{fig:originalmodel}; its results are replotted and compared in \Fref{fig:simcomparison}. The unaltered scope image is available through the \RepoLink{data/session2}{original evidence folder}. The digitised samples are stored separately in \RepoLink{results}{results}; they are not raw solver logs.
-\begin{table}[H]\centering\small
-\caption{Simulink parameters and test conditions.}\label{tab:simsettings}
-\begin{tabularx}{\linewidth}{p{46mm}X}\toprule\thead
-Block / condition & Setting\\\midrule
-Reference and sensor gain & 0.93 V/m each\\
-Proportional controller & 0.01432 V/V\\
-Hover add/subtract & 2.500 V in the nominal model\\
-Velocity transfer function & $14.2748/(8.1s+1)$\\
-Position integrator & Zero initial altitude\\
-Command / sensor saturation & Explicit reconstruction limits: 0--5 V / 0--10 V\\
-Supplied scope sequence & Reference 2.5 m initially, then 5 m at about 2.5 s; zero initial altitude\\
-Isolated design sequence & 0 to 5 m at $t=0$\\\bottomrule
-\end{tabularx}\end{table}
-The screenshot does not display the saturation block parameter dialogs; the limits in the table are explicit settings in the reconstruction. The original native \texttt{.slx} was not supplied. The \RepoLink{matlab/simulink}{MATLAB/Simulink scripts} build a native model, execute both sequences and export logged responses when run in MATLAB with Simulink.
-\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,rulecolor=\color{AngelBlue},columns=fullflexible,showstringspaces=false}
-\begin{lstlisting}[language=Matlab]
-addpath(genpath('matlab'));
-P = lab_parameters();
-run_simulink_tests(P);
-plot_report_figures(P);
-\end{lstlisting}
-The current report figures were rendered with Python. MATLAB reproduction code is provided; it has not been executed in this environment. The supplied Simulink scope is retained evidence of the student's simulation. Export and logged-output APIs follow the official documentation \cite{exportgraphics,sim}.
-\page
-\plot{simulink_comparison}{.87}{Full altitude and command comparison for the supplied Simulink sequence.}{fig:simcommand}
-\plot{nominal_response}{.88}{Isolated nominal 0-to-5 m design test, showing altitude and command. This is a distinct reference sequence from the supplied scope.}{fig:nominal}
-For this test the peak is 6.25402 m, overshoot 25.0804\%, peak time 22.405 s and final 2\% reference-band entry 54.89 s. The maximum command is 2.56659 V and the minimum 2.48330 V; neither reaches the command limits.
-\page
-
-\section{Complete Circuit and Interface}\label{app:circuit}
-\subsection{Signal Stages}
-The complete revised KiCad circuit is in \Fref{fig:circuit}, with an editable project and BOM in the \RepoLink{hardware/kicad}{KiCad folder}. With ideal op-amp inputs, the U1 positive divider is $V_+=r_vR_2/(R_1+R_2)$. Applying KCL at the inverting input gives
-\begin{align}
-V_1&=\left(1+\frac{R_4}{R_3}\right)\frac{R_2}{R_1+R_2}r_v-\frac{R_4}{R_3}y_v,\\
-&=(1+1/100)(1/101)r_v-(1/100)y_v=0.01(r_v-y_v),\\
-V_2&=\left(1+\frac{R_5}{R_6}\right)V_1=(1+4.7/10)V_1=1.47V_1.
-\end{align}
-U3's positive divider gives $V_+=V_2R_8/(R_7+R_8)=V_2/2$. Its bias loading is derived in \Sref{app:loading}.
-
-All three op-amps use pin 7 for $+15$ V, pin 4 for $-15$ V, pin 2 for the inverting input, pin 3 for the non-inverting input and pin 6 for output. Pins 1 and 5 (offset null) and pin 8 (NC) are unused. The hidden offset pins remain in the native symbol with their physical assignments; only their visible graphics and cross marks are omitted.
-\page
-
-\subsection{Bias Network and DAQ Interface}
-\begin{figure}[H]\centering
-\begin{circuitikz}[american,scale=.85,transform shape]
-\draw (0,0) node[ground]{} to[R,l=$R_{11}\ 3.9\,\mathrm{k}\Omega$] (0,-1.5) coordinate(A)
- to[R,l={$P_{\rm top}=10W\,\mathrm{k}\Omega$}] (0,-3) coordinate(W)
- to[R,l={$P_{\rm bot}=10(1-W)\,\mathrm{k}\Omega$}] (0,-4.5) coordinate(B)
- to[R,l=$R_{13}\ 22\,\mathrm{k}\Omega$] (0,-6) node[below]{$-15$ V};
-\draw (A)--(-3,-1.5) to[R,l_=$R_{12}\ 1.2\,\mathrm{k}\Omega$] (-3,-4.5)--(B);
-\draw (W) node[circ]{} -- (5,-3) -- (5,-3.7) node[right]{P1 wiper to $R_9$ / U3 pin 2};
-\node[left] at (A){A};\node[left] at (B){B};
-\node[align=left,anchor=west] at (4.1,-4.9){P1 total: 10 k$\Omega$\\$W=0.783081$ nominal\\wiper loaded through U3};
-\end{circuitikz}
-\caption{Bias potentiometer represented by its two segments, shunt resistor and end resistors. No capacitors are included in the revised KiCad drawing.}\label{fig:biasnetwork}
+\section{Parameter Check and Final Board}\label{app:evidence}\label{app:photos}
+\Fref{fig:paramcheck} records the submitted parameters and the laboratory check results. The displayed scores support the identification values used in \Sref{sec:id}; they are not uncertainty intervals.
+\begin{figure}[H]\raggedright
+\begin{minipage}[t]{.39\linewidth}\vspace{0pt}
+\href{\RepoRoot/tree/\RepoBranch/data/session1/evidence}{\includegraphics[width=\linewidth]{../../data/session1/evidence/parameter_check.png}}
+\end{minipage}\hfill
+\begin{minipage}[t]{.57\linewidth}\vspace{0pt}
+\small
+\begin{tabular}{lll}\toprule\thead
+Parameter & Submitted & Score\\\midrule
+$A$ & 14.2748 & 100\%\\
+$\tau$ & 8.1 s & 96\%\\
+$k_s$ & 0.93 V/m & 100\%\\\bottomrule
+\end{tabular}
+\par\vspace{8pt}The check reports ``Your results were recorded'' for PTRJUN003. The numerical values agree with the model in the original Simulink diagram. The source image and identification circuit reference are retained in the \RepoLink{data/session1/evidence}{evidence folder}.
+\end{minipage}
+\caption{Original Helicopter Parameter Check result for the adopted model.}\label{fig:paramcheck}
 \end{figure}
-\begin{table}[H]\centering\small
-\caption{DAQ and supply connections.}\label{tab:daq}
-\begin{tabularx}{\linewidth}{lX}\toprule\thead
-Connection & Controller node\\\midrule
-DAC-1 & $r_v$, U1 reference branch through $R_1$.\\
-DAC-0 & $y_v$, U1 sensor branch through $R_3$.\\
-ADC-2 & Sensor monitor at $y_v$.\\
-ADC-1 & Command $u$, U3 pin 6; permitted plant range 0--5 V.\\
-Ground & Shared by DAQ, bias network and bench supply.\\
-$\pm15$ V & Op-amp rails; these do not define the permitted plant command.\\\bottomrule
-\end{tabularx}\end{table}
-The LTspice source and supplied circuit image place $R_{11}$ at ground; the current native KiCad schematic agrees. The theoretical hover calibration sets $r_v=y_v$ and trims the loaded command to 2.500 V. This theoretical condition is distinct from the reported approximately 2.565 V input adjustment during the connected controller test. J1/J2 pin numbering is a logical channel/supply map rather than a verified physical connector terminal order.
+\Fref{fig:board} documents the final Veroboard controller described in \Sref{sec:hardware}. The three op-amp packages and adjustable bias trimmer are visible. The schematic records the intended connections; a top-side photograph alone does not establish underside continuity.
+\repfig{hardware}{../../hardware/veroboard.jpeg}{.70}{Final physical controller on Veroboard. The enlarged circuit is \Fref{fig:circuit}; the editable design is in the \RepoLink{hardware/kicad}{KiCad folder}.}{fig:board}
 \page
 
-\subsection{Bias Loading and Stage Gain Calculations}\label{app:loading}
-With the wiper unloaded, $R_P=P1\parallel R_{12}=10\parallel1.2=1.0714286$ k$\Omega$. The end-to-end current and pot-end voltages are
+\section{Demo Record and Original Simulink Scope}\label{app:demo}\label{app:simulink}
+The controller demonstration received full marks (20/20). \Fref{fig:demo} retains the required screenshot of tracking the setpoint. At 86.10 s it displays reference 5.033 m, height 4.897 m, command 2.498 V and sensor 4.553 V. The displayed error is 0.137 m; subtraction of rounded heights gives 0.136 m.
+\repfig{data/session2}{../../data/session2/hardware_step_test.jpeg}{.80}{Original controller tracking screenshot required by the lab brief. The numerical response is replotted in \Fref{fig:hardware}.}{fig:demo}
+\Fref{fig:originalscope} is the original supplied Simulink plot, preserved for comparison with the original model in \Fref{fig:originalmodel}. 
+\repfig{data/session2}{../../data/session2/simulink_scope.png}{.80}{Original Simulink scope: reference (yellow), command (blue) and altitude (orange). The matched-reference comparison is \Fref{fig:simcomparison}.}{fig:originalscope}
+Digitised values are approximate: Simulink altitude resolution is 0.0124 m/pixel, while the demo plot resolution is 0.0417 m/pixel. Source images, processed CSVs and \RepoLink{matlab/simulink}{Simulink reproduction scripts} remain accessible through the linked repository folders.
+\page
+
+\section{Supporting Calculations}\label{app:calculations}
+\label{app:circuit}\label{app:loading}\label{app:adjustment}
+The following enlarged KiCad view shows the bias source feeding U3. $R_{11}$ connects to ground; $R_{13}$ connects to $-15$ V. The pot wiper is loaded through $R_9$, so its unloaded voltage alone does not determine hover output.
+\begin{figure}[H]\raggedright
+\begin{minipage}[t]{.32\linewidth}\vspace{0pt}
+\href{\RepoRoot/tree/\RepoBranch/hardware/kicad}{\includegraphics[width=\linewidth]{kicad_bias.pdf}}
+\end{minipage}\hfill
+\begin{minipage}[t]{.64\linewidth}\vspace{0pt}\small
+\textbf{DAQ connections:} DAC-1 reference, DAC-0 sensor, ADC-1 controller output, ADC-2 sensor monitor. All grounds are common. Op-amp pin 7 is $+15$ V and pin 4 is $-15$ V.
+\par\vspace{6pt}U1: $a_f=R_4/R_3$, $a_r=(1+a_f)R_2/(R_1+R_2)$; nominally both are 0.01. U2: $g_2=1+R_5/R_6=1.47$. U3: $g_3=(1+R_{10}/(R_9+R_{\mathrm{th}}))R_8/(R_7+R_8)$.
+\end{minipage}
+\caption{Bias network and DAQ mapping supporting the enlarged signal stages in \Fref{fig:circuit}.}\label{fig:biasnetwork}
+\end{figure}
+For the unloaded network, $R_P=10\parallel1.2=1.071429$ k$\Omega$ and $I=-15/(3.9+R_P+22)=-0.556143$ mA. Thus $V_A=-2.168962$ V, $V_B=-2.764831$ V and $V_{\rm th}=V_A+W(V_B-V_A)$. Solving the loaded hover condition gives $W=0.783081$, $R_{\rm th}=5.423001$ k$\Omega$ and $V_{\rm th}=-2.635575$ V:
 \begin{align}
-I&=\frac{-15}{3.9+1.0714286+22}=-0.556143\unit{mA},\\
-V_A&=I(3.9)=-2.168962\unit{V},\qquad V_B=I(3.9+1.0714286)=-2.764831\unit{V},\\
-V_{\rm th}&=V_A+W(V_B-V_A).
+u_0&=-\frac{100}{100+5.423001}(-2.635575)=2.500000\unit{V},\\
+g_3&=\frac{1+100/(100+5.423001)}2=0.974280,\\
+K_p&=0.01(1.47)(0.974280)=0.014321913.
 \end{align}
-Set the supply sources to zero and inject a 1 A test current at the wiper. The node-conductance equations for A, B and the wiper are
+The reported 2.565 V potentiometer adjustment is an observation at an unlogged node/time. A permanent zero-error bias of 2.565 V instead of 2.5 V would predict $\delta y=0.065/(0.01432\times0.93)=4.88076$ m, so it is not silently substituted for theoretical hover. The isolated 5 m step initially commands 2.566588 V; the matched Simulink sequence reaches 2.564405 V.
+
+Independent resistor errors change $K_f=a_fg_2g_3$ and $y_\infty/x_\infty=a_r/a_f$. The 2,048 resistor/drag corners give 48.79\% maximum error and 38.95\% overshoot. For example, $a_f=0.9/110$ and $a_r=(1+a_f)1.1/(90+1.1)$ give $a_r/a_f=1.487864$. Matched ratios and two 680 $\Omega$ U1 resistors give $K_p=0.00973890$ and 23.44\% worst scalar overshoot; physical retesting is required.
+At the selected root $s_d=-0.0617284+j0.1402123$, pole angles are $113.7615^\circ$ and $66.2385^\circ$ (sum $180^\circ$). The magnitude condition gives
 \begin{equation}
-\begin{bmatrix}
-G_{11}+G_{12}+G_t&-G_{12}&-G_t\\
--G_{12}&G_{13}+G_{12}+G_b&-G_b\\
--G_t&-G_b&G_t+G_b
-\end{bmatrix}
-\begin{bmatrix}V_A'\\V_B'\\V_w'\end{bmatrix}
-=\begin{bmatrix}0\\0\\1\end{bmatrix},
+K_p=\frac{|s_d||s_d+0.1234568|}{1.6389585}=\frac{(0.1531988)^2}{1.6389585}=0.01432.
 \end{equation}
-where $G_i=1/R_i$, $G_t=1/(WP1)$ and $G_b=1/[(1-W)P1]$. The test voltage $V_w'$ gives $R_{\rm th}$. Solving the hover equation
-\begin{equation}
--\frac{R_{10}}{R_9+R_{\rm th}(W)}V_{\rm th}(W)=2.5
-\end{equation}
-gives $W=0.783080594$, $R_{\rm th}=5423.0014$ $\Omega$ and $V_{\rm th}=-2.6355750$ V. The loaded zero-error wiper is $-2.500$ V.
-
-For U3, define $r=R_{10}/(R_9+R_{\rm th})=0.94855960$. Since the non-inverting divider gives $V_+=V_2/2$, virtual short and KCL give
-\begin{align}
-u&=(1+r)V_+-rV_{\rm th}=\frac{1+r}{2}V_2-rV_{\rm th},\\
-g_3&=\frac{1+0.94855960}{2}=0.97427980,\\
-K_p&=\left(\frac{1}{100}\right)\left(1+\frac{4.7}{10}\right)(0.97427980)=0.014321913.
-\end{align}
-The ideal buffered result 0.0147 differs by 2.57\%, while the selected model value 0.01432 differs from the loaded calculation by only 0.0134\%. These are circuit-model calculations; a measured input/output slope of the final board was not supplied.
-\page
-
-\section{Detailed Calculations}\label{app:calculations}
-\input{\ReportRoot sections/model_calculations.tex}
-\page
-\subsection{Identification and Timing}
-\Tref{tab:rawsamples} gives selected original samples and derived velocities. The finite manual step is evident in the input column. Endpoint times are listed for consistency with the CSV; each derivative physically belongs to its interval midpoint.
-\begin{table}[H]\centering\small
-\caption{Selected identification samples and backward-difference results.}\label{tab:rawsamples}
-\begin{tabular}{rrrrr}\toprule\thead
-$t$ [s] & $u$ [V] & $y_v$ [V] & $y$ [m] & $v_i$ [m/s]\\\midrule
-15.7 & 2.495 & 0.000 & 0.000 & 0.00\\
-15.8 & 2.908 & 0.000 & 0.000 & 0.00\\
-15.9 & 4.607 & 0.000 & 0.000 & 0.00\\
-16.0 & 5.000 & 0.034 & 0.037 & 0.37\\
-16.9 & 5.000 & 2.098 & 2.256 & 4.08\\
-17.0 & 5.000 & 2.513 & 2.703 & 4.47\\
-23.9 & 5.000 & 10.000 & 104.823 & 22.36\\
-24.0 & 5.000 & 10.000 & 107.076 & 22.53\\
-24.1 & 5.000 & 10.000 & 109.345 & 22.69\\\bottomrule
-\end{tabular}\end{table}
-\begin{align}
-v(24.0)&=(107.076-104.823)/0.1=22.53\unit{m/s},\\
-v(24.1)&=(109.345-107.076)/0.1=22.69\unit{m/s},\\
-\bar v_\infty&=\frac1{404}\sum_{t_i\ge120}\frac{y_i-y_{i-1}}{0.1}=35.68747525\unit{m/s},\\
-A&=(35.68747525-0)/2.5=14.27499010\unit{m/(s\,V)},\\
-v_{63}&=0.632(35.68747525)=22.55448436\unit{m/s},\\
-t_{63}&=24.0+0.1\frac{22.55448436-22.53}{22.69-22.53}=24.01530272\unit{s},\\
-\tau_{63}&=24.01530272-15.9=8.11530272\unit{s}.
-\end{align}
-The exponential fit minimises $\sum_{17\le t_i\le60}[v_i-V_\infty(1-e^{-(t_i-t_0)/\tau})]^2$. Its outputs are $V_\infty=35.68747059$ m/s, $\tau=8.10393362$ s and $t_0=15.91583783$ s. These two methods corroborate rounding to $\tau=8.1$ s. They do not create two experimental trials.
-
-The sensor least-squares fit in \Eref{eq:sensor} excludes zero and clipped pairs. The check $k_s(2.703)=0.93(2.703)=2.51379$ V agrees with the recorded 2.513 V within rounding.
-\page
-
-\input{\ReportRoot sections/root_locus_calculations.tex}
-\subsection{Root-Locus Angle and Magnitude Checks}
-\textbf{Step 6 -- Verify the pole position.}
-The locus for variable $K_p$ uses $G_0(s)=k_sG_y(s)=(Ak_s/\tau)/[s(s+1/\tau)]$, where $Ak_s/\tau=1.638959$ s$^{-2}$. At the selected upper pole $s_d=-0.0617284+j0.1402123$,
-\begin{align}
-\angle s_d&=113.76147^\circ,\qquad
-\angle(s_d+1/\tau)=66.23853^\circ,\\
-\angle G_0(s_d)&=-113.76147^\circ-66.23853^\circ=-180^\circ,\\
-K_p&=\frac1{|G_0(s_d)|}
-=\frac{|s_d|\,|s_d+1/\tau|}{Ak_s/\tau}
-=\frac{(0.153198845)^2}{1.63895852}=0.01432.
-\end{align}
-Both the negative-feedback angle criterion and magnitude criterion are satisfied. The quadratic roots independently give the same pole pair.
-
-\page
-\subsection{Nominal Step and Settling Calculation}
-\textbf{Step 7 -- Evaluate the time response.}
-Substituting into \Eref{eq:exactstep},
-\begin{equation}
-y(t)=5\left[1-e^{-0.061728395t}
-\left(\cos(0.140212308t)+0.44025\sin(0.140212308t)\right)\right].
-\end{equation}
-The first peak occurs at $t_p=\pi/\omega_d=22.405969$ s. Since $\cos\pi=-1$ and $\sin\pi=0$,
-\begin{equation}
-y(t_p)=5[1+e^{-0.061728395(22.405969)}]=6.254019\unit{m},
-\end{equation}
-so $M_p=(6.254019-5)/5\times100=25.080375\%$.
-
-\textbf{Step 8 -- Calculate settling.} The error envelope satisfies $|y-5|/5\le e^{-\sigma t}/\sqrt{1-\zeta^2}$. Solving this bound for 2\% gives
-\begin{equation}
-T_{\rm env}=-\frac{\ln(0.02\sqrt{1-0.4029299^2})}{0.061728395}=64.80975\unit{s}.
-\end{equation}
-Actual settling is found by evaluating the full response, locating the last sample for which $|y-5|>0.1$ m, and taking the next sample. A 0.005 s grid gives 54.89 s. This definition agrees with reference-based settling calculations \cite{stepinfo}.
-
-\textbf{Step 9 -- Check command headroom.} Command headroom follows from $u=2.5+K_pk_s(5-y)$: the highest command is 2.566588 V at the step, and the lowest is $2.5-0.01432(0.93)(1.254019)=2.483299$ V at the altitude peak. Neither reaches the 0 or 5 V limit.
-\page
-
-\subsection{Aerodynamic and Component Uncertainty}
-With fixed $k_T$, the uncertain characteristic polynomial is $s^2+b's+k_TK_pk_s$. The worst scalar case has $b'=0.9b_0$ and $K_p'=1.1K_{p,0}$. Applying the required damping ratio gives
-\begin{equation}\label{eq:jointbound}
-K_{p,0}<\frac{(0.9b_0)^2}{4k_Tk_s\zeta_{\min}^2(1.1)}
-=\frac{0.81}{1.1}(0.01815443)=0.01336826.
-\end{equation}
-At the supplied gain the worst-case damping is $(0.9/\sqrt{1.1})(0.4029299)=0.34575$, and \Eref{eq:overshoot} gives 31.42\% overshoot. This explains why passing drag-only uncertainty is insufficient for the joint case.
-
-For independent loop-resistor tolerances, use the U1 coefficients and U2/U3 gains defined in \Sref{sec:hardware}. Assign each of $R_1$--$R_{10}$ either 0.9 or 1.1 times its nominal value, then use both drag extremes. There are $2^{10}\times2=2048$ cases. The bias network is held at its nominal Thevenin resistance and zero-error output is recalibrated in each case. \Tref{tab:corners} reports this optimistic subset.
-\begin{table}[H]\centering\small
-\caption{Independent loop-resistor corner predictions.}\label{tab:corners}
-\begin{tabularx}{\linewidth}{Xr}\toprule\thead
-Quantity & Range / worst value\\\midrule
-Feedback gain $K_f$ & 0.009072--0.022784\\
-Reference/feedback ratio $a_r/a_f$ & 0.672104--1.487864\\
-Absolute DC tracking error & 48.7864\%\\
-Overshoot about each case's own final altitude & 38.9461\%\\\bottomrule
-\end{tabularx}\end{table}
-For example, $R_1=0.9(100\,\mathrm{k}\Omega)$, $R_2=1.1(1\,\mathrm{k}\Omega)$, $R_3=1.1(100\,\mathrm{k}\Omega)$ and $R_4=0.9(1\,\mathrm{k}\Omega)$ give
-\begin{equation}
-a_f=0.9/110=0.00818182,\quad
-\frac{a_r}{a_f}=\frac{(1+0.00818182)(1.1)/(90+1.1)}{0.00818182}=1.487864.
-\end{equation}
-Thus a 5 m reference tends to 7.43932 m even after hover recalibration. The type number cannot remove unequal reference and feedback scaling.
-\page
-\subsection{Practical Gain and Ratio Correction}
-The corner distributions in \Fref{fig:components} separate dynamic overshoot from DC ratio error.
-\plot{component_robustness}{.92}{Loop-resistor corners. Dashed limits are 30\% overshoot and 8\% tracking error. The histograms show corner counts, not probabilities.}{fig:components}
-Failure in this subset rejects a guarantee for all components. Bias-network and op-amp variations can add error. After matching the U1 ratios, a practical gain correction is to replace both 1 k$\Omega$ resistors with matched 680 $\Omega$ values:
-\begin{align}
-K_{p,\rm new}&=\frac{680}{100000}(1.47)(0.97427980)=0.009738901,\\
-\zeta_{\rm worst}&=\frac{0.9b_0}{2\sqrt{k_T(1.1K_{p,\rm new})k_s}}\approx0.4193,\\
-M_{p,\rm worst}&\approx23.44\%,\\
-|\delta u_b|_{\max}&=0.08(5)(0.009738901)(0.93)=3.623\unit{mV}.
-\end{align}
-This scalar check assumes matched reference and feedback ratios; it is not a guarantee for independent resistor corners. Lower gain increases damping but tightens the hover-bias allowance. The board must be recalibrated and retested after any change.
-\page
-
-\input{\ReportRoot sections/test_adjustment_calculations.tex}
-\page
-
-\subsection{Experimental Metrics and Uncertainty}
-The digitised plot uses pixel bounds $x=602\ldots1414$ for 0--120 s and $p_y=60\ldots540$ for 20--0 m. Therefore
-\begin{align}
-t&=\frac{x-602}{1414-602}(120),\qquad h=\frac{540-p_y}{540-60}(20),\\
-\Delta t&=0.147783\unit{s/pixel},\qquad\Delta h=0.041667\unit{m/pixel}.
-\end{align}
-The extracted peak is 6.229167 m at 22.019704 s. With the displayed reference, terminal height and zero starting altitude,
-\begin{align}
-e_f&=5.033-4.897=0.136\unit{m},\\
-\eta_{\rm track}&=100(1-0.136/5.033)=97.297834\%,\\
-M_{p,\rm ref}&=100(6.229167-5.033)/5.033=23.766475\%,\\
-\delta M_{p,\rm ref}&\approx100(0.041667)/5.033=0.82787\text{ percentage points}.
-\end{align}
-This practical overshoot metric uses the commanded reference. If the terminal display is used as a proxy for the actual settled output, the conventional final-output-normalised overshoot is $(6.229167-4.897)/4.897\times100\approx27.20\%$. Both estimates are below 30\%, but the screenshot alone does not establish an exact asymptotic output.
-\Tref{tab:comparison} compares the analytical, simulated and experimental metrics.
-\begin{table}[H]\centering\small
-\caption{Comparison of calculation, simulation and retained experiment.}\label{tab:comparison}
-\begin{tabularx}{\linewidth}{lXXX}\toprule\thead
-Metric & Analytical & Python nominal & Experiment\\\midrule
-Reference & 5.000 m & 5.000 m & 5.033 m\\
-Peak & 6.25402 m & 6.25402 m & $\approx6.229$ m\\
-Peak time & 22.40597 s & 22.405 s & $\approx22.020$ s\\
-Reference overshoot & 25.0804\% & 25.0804\% & $\approx23.7665\%$\\
-Tracking accuracy & 100\% ideal & $\to100\%$ & 97.2978\% displayed\\
-2\% reference settling & 64.81 s envelope & 54.89 s & Not established\\\bottomrule
-\end{tabularx}\end{table}
-For the 5.033 m reference the 8\% band is $5.033(1\pm0.08)=4.63036$--5.43564 m. The 2\% band is 4.93234--5.13366 m. The terminal height lies inside the first but outside the second. The discrepancy cannot be removed by redefining the settling band around the biased terminal value while claiming reference tracking.
-
-The command-bias calculation uses \Eref{eq:bias}: $\delta y=0.002/(0.01432\times0.93)=0.150177$ m. The illustrative test in \Fref{fig:disturbance} injects a positive 2 mV bias at 70 s; it is a model prediction rather than a recorded disturbance experiment.
-\page
-
-\section{Additional Validation Plots}\label{app:validation}
-\Fref{fig:posval} checks the integrated position response; \Fref{fig:aero} compares the three aerodynamic cases listed in \Tref{tab:aero}. The underlying values are retained as CSV and JSON in the \texttt{results} folder.
-\plot{position_validation}{.88}{Position-domain model comparison and residuals for the retained identification run.}{fig:posval}
-\begin{table}[H]\centering\small
-\caption{Predicted performance under aerodynamic uncertainty.}\label{tab:aero}
-\begin{tabular}{lrrr}\toprule\thead
-Drag & Peak [m] & Overshoot [\%] & $T_{s,2\%}$ [s]\\\midrule
-$0.9b_0$ & 6.473 & 29.45 & 70.80\\
-$b_0$ & 6.254 & 25.08 & 54.89\\
-$1.1b_0$ & 6.058 & 21.15 & 54.59\\\bottomrule
-\end{tabular}\end{table}
-\plot{aerodynamic_robustness}{.88}{Predicted altitude responses for $b=0.9b_0,b_0,1.1b_0$, with local thrust slope held fixed.}{fig:aero}
-\page
-\Fref{fig:disturbance} demonstrates sensitivity to a defined input bias. At nominal gain its predicted final displacement is +0.150 m, within the 0.4 m allowance for a 5 m reference.
-\plot{disturbance_prediction}{.95}{Illustrative simulated response to +2 mV actuator bias added at 70 s. The shaded region is the 8\% tracking band.}{fig:disturbance}
-This simulation tests one stated disturbance amplitude. It does not imply rejection of arbitrary disturbance magnitudes or establish experimental disturbance performance.
-\page
-
-\section{Identification Data and Code}\label{app:data}
-\subsection{Data Provenance}
-The unmodified \texttt{data/session1/PTRJUN003\_raw.csv} contains time, command voltage, sensor voltage, altitude and stored speed. The processed copy excludes 31 pre-reset rows and adds recalculated velocity, midpoint time and model predictions; \Tref{tab:rawsamples} gives selected calculations.
-
-
-\subsection{Organised Source Code}\label{app:code}
-The numerical pipeline is separated by task. All stages read the shared \RepoFile{config/lab_parameters.json}{parameter file}; output CSVs and metrics are stored in \RepoLink{results}{results}. Python/Matplotlib generated every numerical report figure. The \RepoLink{matlab/plots}{MATLAB plotting folder} provides counterparts for all numerical figures; its analytical response plots do not require Control System Toolbox. The existing transfer-function checks require that toolbox, and the native model runner requires Simulink.
-\begin{table}[H]\centering\small
-\caption{Code modules and their calculation responsibilities.}\label{tab:modules}
-\begin{tabularx}{\linewidth}{p{43mm}X}\toprule\thead
-Source location & Responsibility\\\midrule
-\RepoLink{analysis/modules}{Python modules} & Identification, controller response/root locus, robustness, hardware digitisation and disturbance simulation.\\
-\RepoLink{matlab/identification}{MATLAB identification} & Backward differences, velocity gain, 63.2\% timing and sensor calibration.\\
-\RepoLink{matlab/design}{MATLAB design} & Root-locus geometry, angle/magnitude checks, gain limits and response plots.\\
-\RepoLink{matlab/validation}{MATLAB validation} & Independent nominal and aerodynamic controller checks.\\
-\RepoLink{matlab/simulink}{Simulink model and tests} & Builds the model and logs both reference sequences.\\
-\RepoLink{matlab/plots}{MATLAB plot reproduction} & Exports counterparts of all report plots as vector PDFs and PNGs.\\
-\RepoLink{calculations}{Worked calculations} & Separate calculation PDF, LaTeX equations and topic index.\\\bottomrule
-\end{tabularx}\end{table}
-Run the Python launcher from the project root:
-\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,rulecolor=\color{AngelBlue},columns=fullflexible,showstringspaces=false}
-\begin{lstlisting}[language=bash]
-python -m pip install -r requirements.txt
-python analysis/analyse.py
-\end{lstlisting}
-In MATLAB, set the Current Folder to \texttt{matlab}, then enter:
-\begin{lstlisting}[language=Matlab]
-run_all
-run_simulink_tests(lab_parameters());
-root_locus_design
-\end{lstlisting}
-Dependencies and step conventions are recorded in the \RepoFile{CODE_GUIDE.md}{code guide}.
-\page
-\section{Repository and Reproduction}\label{app:repository}
-\RepoStatus\ Open the \href{\RepoRoot}{complete GitHub repository} or use the folder links in \Tref{tab:repo}. Figure, table, equation and appendix references remain internal PDF hyperlinks. The repository guide and calculation index explain how to reproduce each result.
-\begin{table}[H]\centering\small
-\caption{Clickable evidence map and corresponding Git folders.}\label{tab:repo}
-\begin{tabularx}{\linewidth}{p{37mm}X}\toprule\thead
-Folder / evidence link & Contents\\\midrule
-\RepoLink{data/session1}{\texttt{data/session1}} & Original identification CSV; source description in \Aref{app:data}.\\
-\RepoLink{data/session2}{\texttt{data/session2}} & Original experimental display and Simulink screenshots.\\
-\RepoLink{hardware}{\texttt{hardware}} & Board photograph, LTspice/KiCad design sources and circuit notes.\\
-\RepoLink{analysis}{\texttt{analysis}} & Python identification, simulation, digitisation and tolerance calculations.\\
-\RepoLink{matlab}{\texttt{matlab}} & Controller verification and Simulink model builder.\\
-\RepoLink{results}{\texttt{results}} & Processed CSVs, nominal traces, corners and scalar metrics.\\
-\RepoLink{report}{\texttt{report}} & LaTeX source, figures and compiled report.\\
-\RepoLink{scripts}{\texttt{scripts}} & Build, link configuration and folder indexes.\\
-\RepoLink{config}{\texttt{config}} & One shared parameter file for MATLAB and Python.\\
-\RepoLink{calculations}{\texttt{calculations}} & Worked calculation PDF and equation source.\\\bottomrule
-\end{tabularx}\end{table}
-
-\subsection{Build the Report}
-Extract the ZIP, keep its folder structure, install the Python requirements, and run:
-\begin{lstlisting}[language=bash]
-python -m pip install -r requirements.txt
-bash scripts/build.sh
-\end{lstlisting}
-The build regenerates numerical results and figures, then compiles \texttt{report/main.tex} with \texttt{latexmk -pdf}. A LaTeX distribution with TikZ and Circuitikz is required. The package also contains the compiled PDF for immediate viewing.
-
-\page
-\subsection{GitHub Folder Links}
-The report uses the repository supplied for this project:
-\begin{center}\href{\RepoRoot}{NateDogg247 / EEE3094S---Lab-2-PTRJUN003-}\end{center}
-The shared branch setting is \texttt{main}. Supporting-folder URLs use \texttt{/tree/main/}; individual source-file links use \texttt{/blob/main/}. \texttt{report/repository.tex} stores these settings centrally. Recompile the report after changing that file.
-
-\subsection{Page Count and Reproduction}
-The main report runs from Introduction on page 1 to Final Remarks on page 14. The title, table of contents, lists of figures and tables, references and appendices are excluded from this count. References use R-prefixed page numbers and appendices use A-prefixed page numbers.
-
-Click any numerical plot to open its Python source folder; each caption also links the MATLAB reproduction folder and numerical results. The numerical pipeline regenerates identification, root-locus, response, tolerance, Simulink-evidence and experimental metrics. The report and calculation supplement retain the corresponding worked equations. The available record contains one identification run and one controller display; it cannot establish repeated-trial averages or an assessor-awarded demonstration mark.
+\RepoLink{calculations}{Extended calculations}, \RepoLink{analysis/modules}{Python code}, \RepoLink{matlab/design}{MATLAB root locus}, \RepoLink{matlab/simulink}{Simulink tests} and \RepoFile{CODE_GUIDE.md}{reproduction instructions} are supplied outside the report.

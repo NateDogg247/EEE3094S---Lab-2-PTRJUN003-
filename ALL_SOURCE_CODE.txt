@@ -21,32 +21,29 @@ hardware/Kitticopter_3OpAmp_Controller.asc
 hardware/kicad/Controller.kicad_sym
 hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_pro
 hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_sch
+hardware/kicad/export_report_panels.py
 hardware/kicad/sym-lib-table
 hardware/kicad/verify_netlist.py
 main.tex
-matlab/build_simulink_model.m
 matlab/config/lab_parameters.m
 matlab/design/run_root_locus_design.m
 matlab/identification/identify_session1.m
 matlab/plots/plot_report_figures.m
-matlab/root_locus_design.m
 matlab/run_all.m
 matlab/simulink/create_simulink_model.m
 matlab/simulink/run_simulink_tests.m
 matlab/validation/verify_nominal_controller.m
-matlab/verify_controller.m
 report/main.tex
 report/repository.tex
 report/sections/appendices.tex
 report/sections/body.tex
-report/sections/circuit.tex
 report/sections/model_calculations.tex
 report/sections/references.tex
 report/sections/root_locus_calculations.tex
 report/sections/test_adjustment_calculations.tex
 scripts/build.sh
 scripts/check_report.py
-scripts/make_indexes.py
+scripts/export_diagrams.py
 scripts/make_source_listing.py
 scripts/repository_internal.tex
 scripts/set_repository.py
@@ -364,6 +361,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.optimize import least_squares
+from scipy.integrate import solve_ivp
 from .plot_style import BLUE, ORANGE, GREEN, RED, exporter
 
 
@@ -419,6 +417,21 @@ def run(project_root, parameters):
 
     vv = pred_vel(t)
     yy = pred_pos(t)
+    # Independent input treatment: retain the measured finite transition.
+    # Initial velocity is zero at 15.7 s, immediately before the manual change.
+    measured_times = t[t >= 15.7]
+    measured_input = solve_ivp(
+        lambda tt, state: [(A * (np.interp(tt, t, u) - parameters.hover_v) - state[0]) / tau],
+        [15.7, float(t[-1])], [0.0], t_eval=measured_times,
+        rtol=1e-8, atol=1e-9, max_step=0.05,
+    )
+    if not measured_input.success:
+        raise RuntimeError(measured_input.message)
+    measured_v = measured_input.y[0]
+    measured_fit = (measured_times >= 17) & (measured_times <= 60)
+    measured_valid = measured_times > 60
+    pd.DataFrame({'time_s': measured_times, 'velocity_from_measured_input_mps': measured_v}).to_csv(
+        RES / 'session1_measured_input_validation.csv', index=False)
     train = (t >= 17) & (t <= 60)
     valid = t > 60
 
@@ -448,6 +461,10 @@ def run(project_root, parameters):
         "nominal_kp": kp,
         "b": b,
         "kT": kt,
+        "measured_input_velocity_rmse_fit_window": rmse(v[t >= 15.7][measured_fit], measured_v[measured_fit]),
+        "measured_input_velocity_rmse_holdout": rmse(v[t >= 15.7][measured_valid], measured_v[measured_valid]),
+        "parameter_checker": {"A_score_percent":100, "tau_score_percent":96, "sensor_score_percent":100,
+                              "provenance":"Supplied Helicopter Parameter Check screenshot; not confidence intervals"},
     }
     d["Velocity(m/s)"] = v
     d["Velocity_time_midpoint(s)"] = vmid
@@ -469,10 +486,20 @@ def run(project_root, parameters):
     axs[2].text(45, 4.5, "Voltage clips at 10 V; metre channel keeps increasing")
     fig.tight_layout()
     save(fig, "identification_record")
+    fig, ax = plt.subplots(figsize=(7.1, 2.3))
+    zoom = (t >= 14.5) & (t <= 17.5)
+    ax.plot(t[zoom], u[zoom], 'o-', ms=3, color=blue, label='Logged manual input')
+    ax.plot([14.5,15.9,15.9,17.5], [2.5,2.5,5,5], '--', color=orange,
+            label='Ideal step approximation, 2.5 V increment')
+    ax.set(xlabel='Retained run time (s)', ylabel='Input command (V)', xlim=(14.5,17.5), ylim=(2.35,5.15))
+    ax.legend(fontsize=9, loc='lower right')
+    save(fig, 'step_input_transition')
     fig, ax = plt.subplots(figsize=(7.1, 3.5))
     q = t - 15.9
     ax.plot(q, v, color=blue, lw=1, label="Backward difference of position")
     ax.plot(q, vv, "--", color=orange, label="First-order model")
+    ax.plot(measured_times-15.9, measured_v, ':', color=red, lw=1.2,
+            label='Model driven by recorded input')
     ax.axhline(target, color=green, ls=":", label=f"63.2% = {target:.3f} m/s")
     ax.axvline(t63 - 15.9, color=green, ls=":")
     ax.axhline(ss, color="gray", ls=":")
@@ -1132,7 +1159,12 @@ FILE: data/session2/test_conditions.json
   "provenance": "Student clarification in this conversation",
   "test_type": "Physical analogue controller connected to the simulated altitude plant",
   "full_three_op_amp_circuit_connected": true,
-  "channel_map": {"DAC-1":"Reference", "DAC-0":"Sensor feedback", "ADC-1":"Controller command", "ADC-2":"Sensor monitor"},
+  "channel_map": {
+    "DAC-1": "Reference",
+    "DAC-0": "Sensor feedback",
+    "ADC-1": "Controller command",
+    "ADC-2": "Sensor monitor"
+  },
   "reported_adjustment": {
     "method": "Adjusted the potentiometer in the physical circuit",
     "reported_input_V": 2.565,
@@ -1144,7 +1176,8 @@ FILE: data/session2/test_conditions.json
   "nominal_model_hover_V": 2.5,
   "terminal_display_command_V": 2.498,
   "terminal_display_time_s": 86.1,
-  "identification_test_connection": "The new full-circuit confirmation applies to the controller test; it does not change the Session 1 CSV interpretation."
+  "identification_test_connection": "The new full-circuit confirmation applies to the controller test; it does not change the Session 1 CSV interpretation.",
+  "student_reported_demo_mark": "Full marks (user statement; no invented marking sheet)"
 }
 
 
@@ -1848,7 +1881,7 @@ FILE: hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_pro
 FILE: hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_sch
 ================================================================================
 (kicad_sch (version 20230121) (generator ptrjun003_schematic) (uuid 0d88bdcb-300b-577a-a5d1-082238875978) (paper "A4")
-(title_block (title "Three-op-amp proportional controller") (date "2026-10-11") (rev "2") (company "EEE3094S / PTRJUN003") (comment 1 "Documented design; J1/J2 are logical interface maps"))
+(title_block (title "Three-op-amp proportional controller") (date "2026-10-11") (rev "3") (company "EEE3094S / PTRJUN003") (comment 1 "Documented design; J1/J2 are logical interface maps"))
 (lib_symbols
 (symbol "Controller:LM741" (pin_names (offset 0.127)) (in_bom yes) (on_board yes)
     (property "Reference" "U" (at 0 6.35 0)
@@ -2316,10 +2349,10 @@ FILE: hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_sch
 (text "U2  Non-inverting amplifier" (at 103 25 0) (effects (font (size 1.5 1.5) bold) (justify left) ) (uuid 5b3919d7-d2a6-5a78-84cf-79e8bcb890c4))
 (text "U3  Command and bias summer" (at 188 25 0) (effects (font (size 1.5 1.5) bold) (justify left) ) (uuid 856c57c2-b173-5927-841d-cc4257c30d24))
 (symbol (lib_id "Controller:LM741") (at 57 60 0) (unit 1) (mirror x) (in_bom yes) (on_board yes) (uuid f11546da-b1fd-5c2b-a580-bfe222b463af)
- (property "Reference" "U1" (at 62.8 69 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "LM741" (at 62.8 72 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "Package_DIP:DIP-8_W7.62mm" (at 57 60 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 57 60 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
+ (property "Reference" "U1" (at 62.8 69 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "LM741" (at 62.8 72 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "Package_DIP:DIP-8_W7.62mm" (at 57 60 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 57 60 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid cd9668ca-b38f-5327-a593-3b6e55370fb7))
  (pin "2" (uuid 9dfef986-a4b7-5437-a546-f7ddc5a8fa60))
  (pin "3" (uuid f9290609-e754-5a81-b8dc-4273415a888a))
@@ -2330,15 +2363,15 @@ FILE: hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_sch
  (pin "8" (uuid b654e654-6e4f-53ae-a039-82cc493d68c4))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "U1") (unit 1))))
 )
-(wire (pts (xy 54.46 52.38) (xy 54.46 48)) (stroke (width 0) (type default)) (uuid ecf278aa-a75b-5c40-baf8-c036881fcfb1))
-(label "-15V" (at 54.46 48 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid f3b2d115-33a4-5cff-a9e6-c177fbb5ff9b))
-(wire (pts (xy 54.46 67.62) (xy 54.46 77)) (stroke (width 0) (type default)) (uuid 3cfea307-d841-5277-99a8-17f1bc19f81c))
-(label "+15V" (at 54.46 77 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid 44518c89-6408-556e-b095-38538c5c3eae))
+(wire (pts (xy 54.46 52.38) (xy 54.46 50)) (stroke (width 0) (type default)) (uuid ecf278aa-a75b-5c40-baf8-c036881fcfb1))
+(label "-15V" (at 54.46 50 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid f3b2d115-33a4-5cff-a9e6-c177fbb5ff9b))
+(wire (pts (xy 54.46 67.62) (xy 54.46 71)) (stroke (width 0) (type default)) (uuid 3cfea307-d841-5277-99a8-17f1bc19f81c))
+(label "+15V" (at 54.46 71 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 44518c89-6408-556e-b095-38538c5c3eae))
 (symbol (lib_id "Controller:LM741") (at 143 60 0) (unit 1) (mirror x) (in_bom yes) (on_board yes) (uuid 1e4b3f21-0a57-5b16-8d33-61ea3b126da9)
- (property "Reference" "U2" (at 148.8 69 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "LM741" (at 148.8 72 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "Package_DIP:DIP-8_W7.62mm" (at 143 60 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 143 60 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
+ (property "Reference" "U2" (at 148.8 69 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "LM741" (at 148.8 72 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "Package_DIP:DIP-8_W7.62mm" (at 143 60 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 143 60 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid 026a36dd-3ef7-5c78-b983-f64b846439ed))
  (pin "2" (uuid 81527d76-6ffd-522d-81fa-cb45651555c7))
  (pin "3" (uuid 305d311b-f9ed-56a6-bc0a-dab8fef0a082))
@@ -2349,15 +2382,15 @@ FILE: hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_sch
  (pin "8" (uuid fc90ec14-c14a-5fd7-bc9b-6ea83909b4fb))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "U2") (unit 1))))
 )
-(wire (pts (xy 140.46 52.38) (xy 140.46 48)) (stroke (width 0) (type default)) (uuid 1351aeff-026c-55a6-be11-b44fedcfb670))
-(label "-15V" (at 140.46 48 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid 35b5d4b8-ab57-5098-93c0-4619530873d4))
-(wire (pts (xy 140.46 67.62) (xy 140.46 77)) (stroke (width 0) (type default)) (uuid 6c6f7cc9-ba7f-57ae-8106-fcd08199436a))
-(label "+15V" (at 140.46 77 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid ec7784b5-ec60-5e2c-ad9b-1c2f8b25b184))
+(wire (pts (xy 140.46 52.38) (xy 140.46 50)) (stroke (width 0) (type default)) (uuid 1351aeff-026c-55a6-be11-b44fedcfb670))
+(label "-15V" (at 140.46 50 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 35b5d4b8-ab57-5098-93c0-4619530873d4))
+(wire (pts (xy 140.46 67.62) (xy 140.46 71)) (stroke (width 0) (type default)) (uuid 6c6f7cc9-ba7f-57ae-8106-fcd08199436a))
+(label "+15V" (at 140.46 71 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid ec7784b5-ec60-5e2c-ad9b-1c2f8b25b184))
 (symbol (lib_id "Controller:LM741") (at 230 60 0) (unit 1) (mirror x) (in_bom yes) (on_board yes) (uuid cc6a64b5-061e-5ccf-89f2-93743c4068f3)
- (property "Reference" "U3" (at 235.8 69 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "LM741" (at 235.8 72 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "Package_DIP:DIP-8_W7.62mm" (at 230 60 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 230 60 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
+ (property "Reference" "U3" (at 235.8 69 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "LM741" (at 235.8 72 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "Package_DIP:DIP-8_W7.62mm" (at 230 60 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 230 60 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid c26cb77d-80fd-594a-b3c8-c43c978279ba))
  (pin "2" (uuid f3fc9fe9-128a-52f5-b084-c1e48d315b11))
  (pin "3" (uuid 289c7aaf-a186-530e-bbdf-469c54ccd59c))
@@ -2368,68 +2401,68 @@ FILE: hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_sch
  (pin "8" (uuid 571bb27e-5cb1-5e0f-82a4-c836d9310777))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "U3") (unit 1))))
 )
-(wire (pts (xy 227.46 52.38) (xy 227.46 48)) (stroke (width 0) (type default)) (uuid d2182619-1ee6-509c-a6c1-addf4d020b06))
-(label "-15V" (at 227.46 48 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid 75bfc38e-bc6f-5bf1-8c87-c126cf18f8af))
-(wire (pts (xy 227.46 67.62) (xy 227.46 77)) (stroke (width 0) (type default)) (uuid e422f69b-12d6-58fe-b6d2-c275dc085ff6))
-(label "+15V" (at 227.46 77 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid 467c822d-45d0-5f9c-b37a-83b39cacd6d6))
+(wire (pts (xy 227.46 52.38) (xy 227.46 50)) (stroke (width 0) (type default)) (uuid d2182619-1ee6-509c-a6c1-addf4d020b06))
+(label "-15V" (at 227.46 50 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 75bfc38e-bc6f-5bf1-8c87-c126cf18f8af))
+(wire (pts (xy 227.46 67.62) (xy 227.46 71)) (stroke (width 0) (type default)) (uuid e422f69b-12d6-58fe-b6d2-c275dc085ff6))
+(label "+15V" (at 227.46 71 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 467c822d-45d0-5f9c-b37a-83b39cacd6d6))
 (symbol (lib_id "Controller:R_US") (at 27 57.46 90) (unit 1) (in_bom yes) (on_board yes) (uuid 5a6adeda-1d99-58a2-bb93-f109a247c4b3)
- (property "Reference" "R3" (at 21 53.46 90) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "100k" (at 27 53.46 90) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "" (at 27 57.46 90) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 27 57.46 90) (effects (font (size 1.27 1.27) ) (justify left) hide))
+ (property "Reference" "R3" (at 27 50.46 90) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "100k" (at 27 53.46 90) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "" (at 27 57.46 90) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 27 57.46 90) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid dd3d53ef-8473-58d0-ba01-2fc114ffdc4c))
  (pin "2" (uuid 83a1b51e-72a1-5afa-a3e7-c3bbbc64c7cb))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "R3") (unit 1))))
 )
 (symbol (lib_id "Controller:R_US") (at 27 62.54 90) (unit 1) (in_bom yes) (on_board yes) (uuid d0ade38a-6dde-5549-abdd-2abef26ffc0c)
- (property "Reference" "R1" (at 21 66.54 90) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "100k" (at 27 66.54 90) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "" (at 27 62.54 90) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 27 62.54 90) (effects (font (size 1.27 1.27) ) (justify left) hide))
+ (property "Reference" "R1" (at 27 66.54 90) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "100k" (at 27 69.54 90) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "" (at 27 62.54 90) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 27 62.54 90) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid 2e660813-c433-54de-a8b5-a10f3fec8035))
  (pin "2" (uuid 9b321d2b-0915-5781-b72b-0283b60e951e))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "R1") (unit 1))))
 )
-(global_label "DAC-0" (shape input) (at 11 57.46 180) (effects (font (size 1.1 1.1) ) (justify right) ) (uuid 155414ad-8e1b-5ea5-b401-cb0b7ecc3109))
-(global_label "DAC-1" (shape input) (at 11 62.54 180) (effects (font (size 1.1 1.1) ) (justify right) ) (uuid 3e6f4b34-3573-5f2e-876a-9e94f221f19e))
+(global_label "DAC-0" (shape input) (at 11 57.46 180) (effects (font (size 1.6 1.6) ) (justify right) ) (uuid 155414ad-8e1b-5ea5-b401-cb0b7ecc3109))
+(global_label "DAC-1" (shape input) (at 11 62.54 180) (effects (font (size 1.6 1.6) ) (justify right) ) (uuid 3e6f4b34-3573-5f2e-876a-9e94f221f19e))
 (wire (pts (xy 11 57.46) (xy 23.19 57.46)) (stroke (width 0) (type default)) (uuid 9588969e-fb19-54d8-bf0d-2b9ee5612db8))
 (wire (pts (xy 30.81 57.46) (xy 42 57.46)) (stroke (width 0) (type default)) (uuid 00237060-5e9c-5d28-b4ba-1b2d64a1a15d))
 (wire (pts (xy 42 57.46) (xy 49.38 57.46)) (stroke (width 0) (type default)) (uuid cb1d0e54-88ce-5e67-acfb-34e37b0129c5))
 (wire (pts (xy 11 62.54) (xy 23.19 62.54)) (stroke (width 0) (type default)) (uuid b1219138-9551-558a-9a30-452a68845694))
 (wire (pts (xy 30.81 62.54) (xy 42 62.54)) (stroke (width 0) (type default)) (uuid 23cd89f4-be36-58ea-93c6-0c68754fed25))
 (wire (pts (xy 42 62.54) (xy 49.38 62.54)) (stroke (width 0) (type default)) (uuid 402a23dd-c112-5cfb-bf79-6d751ded6b82))
-(symbol (lib_id "Controller:R_US") (at 62 37 90) (unit 1) (in_bom yes) (on_board yes) (uuid 4855ce66-00ea-5624-9618-07b805ca7e47)
- (property "Reference" "R4" (at 56 33 90) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "1k" (at 62 33 90) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "" (at 62 37 90) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 62 37 90) (effects (font (size 1.27 1.27) ) (justify left) hide))
+(symbol (lib_id "Controller:R_US") (at 62 47 90) (unit 1) (in_bom yes) (on_board yes) (uuid 4855ce66-00ea-5624-9618-07b805ca7e47)
+ (property "Reference" "R4" (at 62 40 90) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "1k" (at 62 43 90) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "" (at 62 47 90) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 62 47 90) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid 184ea0b2-006f-5ac2-a528-656e3c84602a))
  (pin "2" (uuid 98483c26-7f05-507d-bb39-f07665be4629))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "R4") (unit 1))))
 )
-(wire (pts (xy 42 57.46) (xy 42 37)) (stroke (width 0) (type default)) (uuid 2ecf49f9-45c9-5f4d-9685-d7631631d8c8))
-(wire (pts (xy 42 37) (xy 58.19 37)) (stroke (width 0) (type default)) (uuid 1fd975d3-af6d-5ec6-8def-85d488571d92))
-(wire (pts (xy 65.81 37) (xy 83 37)) (stroke (width 0) (type default)) (uuid 58f28987-4619-5cb3-95f3-74149cf0be42))
-(wire (pts (xy 83 37) (xy 83 60)) (stroke (width 0) (type default)) (uuid 0ebeab86-59b9-535b-8ba9-39197478b541))
+(wire (pts (xy 42 57.46) (xy 42 47)) (stroke (width 0) (type default)) (uuid 2ecf49f9-45c9-5f4d-9685-d7631631d8c8))
+(wire (pts (xy 42 47) (xy 58.19 47)) (stroke (width 0) (type default)) (uuid 1fd975d3-af6d-5ec6-8def-85d488571d92))
+(wire (pts (xy 65.81 47) (xy 83 47)) (stroke (width 0) (type default)) (uuid 58f28987-4619-5cb3-95f3-74149cf0be42))
+(wire (pts (xy 83 47) (xy 83 60)) (stroke (width 0) (type default)) (uuid 0ebeab86-59b9-535b-8ba9-39197478b541))
 (wire (pts (xy 64.62 60) (xy 83 60)) (stroke (width 0) (type default)) (uuid eff75ab8-6fff-53f9-af02-cd9ff7027d64))
 (wire (pts (xy 83 60) (xy 94 60)) (stroke (width 0) (type default)) (uuid 1497052f-e545-58fe-a786-356901c4ab6e))
-(label "V1" (at 88 60 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid 0a08e9de-8bc0-53bf-8c7f-57558a51bd7a))
-(symbol (lib_id "Controller:R_US") (at 42 80 0) (unit 1) (in_bom yes) (on_board yes) (uuid d81e4634-b21c-543c-b8ea-0309c8e43d39)
- (property "Reference" "R2" (at 45 78.5 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "1k" (at 45 81.5 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "" (at 42 80 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 42 80 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
+(label "V1" (at 88 60 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 0a08e9de-8bc0-53bf-8c7f-57558a51bd7a))
+(symbol (lib_id "Controller:R_US") (at 42 72 0) (unit 1) (in_bom yes) (on_board yes) (uuid d81e4634-b21c-543c-b8ea-0309c8e43d39)
+ (property "Reference" "R2" (at 45 70.5 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "1k" (at 45 73.5 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "" (at 42 72 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 42 72 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid 089494d8-dcfb-5f2b-8cfb-71c80bbbb3ce))
  (pin "2" (uuid 83c23bf9-9570-5304-a433-24513a59ccd2))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "R2") (unit 1))))
 )
-(wire (pts (xy 42 62.54) (xy 42 76.19)) (stroke (width 0) (type default)) (uuid 383bec4d-3eeb-57cc-8e0f-857e5c289855))
-(wire (pts (xy 42 83.81) (xy 42 88)) (stroke (width 0) (type default)) (uuid ca3f0e17-353e-5f6e-8172-c5ab21ed140b))
-(symbol (lib_id "Controller:GND") (at 42 88 0) (unit 1) (in_bom no) (on_board no) (uuid f3268fa6-35e1-5967-843a-72f15c56eebc)
- (property "Reference" "#PWR01" (at 42 88 0) (effects (font (size 1.27 1.27) )  hide))
- (property "Value" "GND" (at 42 92.2 0) (effects (font (size 1.27 1.27) )  ))
- (property "Footprint" "" (at 42 88 0) (effects (font (size 1.27 1.27) )  hide))
- (property "Datasheet" "" (at 42 88 0) (effects (font (size 1.27 1.27) )  hide))
+(wire (pts (xy 42 62.54) (xy 42 68.19)) (stroke (width 0) (type default)) (uuid 383bec4d-3eeb-57cc-8e0f-857e5c289855))
+(wire (pts (xy 42 75.81) (xy 42 78)) (stroke (width 0) (type default)) (uuid ca3f0e17-353e-5f6e-8172-c5ab21ed140b))
+(symbol (lib_id "Controller:GND") (at 42 78 0) (unit 1) (in_bom no) (on_board no) (uuid f3268fa6-35e1-5967-843a-72f15c56eebc)
+ (property "Reference" "#PWR01" (at 42 78 0) (effects (font (size 2.0 2.0) )  hide))
+ (property "Value" "GND" (at 42 82.2 0) (effects (font (size 2.0 2.0) )  ))
+ (property "Footprint" "" (at 42 78 0) (effects (font (size 2.0 2.0) )  hide))
+ (property "Datasheet" "" (at 42 78 0) (effects (font (size 2.0 2.0) )  hide))
  (pin "1" (uuid b6f3294f-50f6-5f55-88e3-653090079bef))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "#PWR01") (unit 1))))
 )
@@ -2441,64 +2474,64 @@ FILE: hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_sch
 (wire (pts (xy 102 60) (xy 102 62.54)) (stroke (width 0) (type default)) (uuid 7ddc3d96-1b7d-5296-bfe6-741826781aab))
 (wire (pts (xy 102 62.54) (xy 135.38 62.54)) (stroke (width 0) (type default)) (uuid e7382579-17b3-52e6-88a1-0e7488f3c66f))
 (wire (pts (xy 135.38 57.46) (xy 124 57.46)) (stroke (width 0) (type default)) (uuid 7174a58c-cb0a-5a19-bf97-e93d6cbaae6c))
-(wire (pts (xy 124 57.46) (xy 124 37)) (stroke (width 0) (type default)) (uuid a05e773d-5b83-5a53-8d8c-4009c10bec32))
-(wire (pts (xy 124 37) (xy 146.19 37)) (stroke (width 0) (type default)) (uuid 94497e81-ca70-5e45-9a43-4796e4fdd250))
-(symbol (lib_id "Controller:R_US") (at 150 37 90) (unit 1) (in_bom yes) (on_board yes) (uuid a968ceda-1609-5790-98ee-d1b85aa634e9)
- (property "Reference" "R5" (at 144 33 90) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "4.7k" (at 150 33 90) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "" (at 150 37 90) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 150 37 90) (effects (font (size 1.27 1.27) ) (justify left) hide))
+(wire (pts (xy 124 57.46) (xy 124 47)) (stroke (width 0) (type default)) (uuid a05e773d-5b83-5a53-8d8c-4009c10bec32))
+(wire (pts (xy 124 47) (xy 146.19 47)) (stroke (width 0) (type default)) (uuid 94497e81-ca70-5e45-9a43-4796e4fdd250))
+(symbol (lib_id "Controller:R_US") (at 150 47 90) (unit 1) (in_bom yes) (on_board yes) (uuid a968ceda-1609-5790-98ee-d1b85aa634e9)
+ (property "Reference" "R5" (at 150 40 90) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "4.7k" (at 150 43 90) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "" (at 150 47 90) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 150 47 90) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid d663c370-612f-556e-bfe3-bc59ff89fff9))
  (pin "2" (uuid daaed36b-484a-50d3-ba53-d742fdedcf04))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "R5") (unit 1))))
 )
-(wire (pts (xy 153.81 37) (xy 170 37)) (stroke (width 0) (type default)) (uuid 3c4beaef-7fcd-56f3-a956-472320548cc1))
-(wire (pts (xy 170 37) (xy 170 60)) (stroke (width 0) (type default)) (uuid b4224ed3-5c17-5242-9c18-e933d82d7d00))
+(wire (pts (xy 153.81 47) (xy 170 47)) (stroke (width 0) (type default)) (uuid 3c4beaef-7fcd-56f3-a956-472320548cc1))
+(wire (pts (xy 170 47) (xy 170 60)) (stroke (width 0) (type default)) (uuid b4224ed3-5c17-5242-9c18-e933d82d7d00))
 (wire (pts (xy 150.62 60) (xy 170 60)) (stroke (width 0) (type default)) (uuid 463b5b40-e5e8-52ec-a346-7418d1ad2598))
 (wire (pts (xy 170 60) (xy 180 60)) (stroke (width 0) (type default)) (uuid c64d2253-3243-54ea-88b0-d60b16bd914c))
-(label "V2" (at 172 60 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid 38f8e599-8790-5db4-89c5-850808db55ff))
-(symbol (lib_id "Controller:R_US") (at 124 80 0) (unit 1) (in_bom yes) (on_board yes) (uuid b9707805-d2f4-53ca-8f5f-886cfd8b23a6)
- (property "Reference" "R6" (at 127 78.5 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "10k" (at 127 81.5 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "" (at 124 80 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 124 80 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
+(label "V2" (at 172 60 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 38f8e599-8790-5db4-89c5-850808db55ff))
+(symbol (lib_id "Controller:R_US") (at 124 72 0) (unit 1) (in_bom yes) (on_board yes) (uuid b9707805-d2f4-53ca-8f5f-886cfd8b23a6)
+ (property "Reference" "R6" (at 127 70.5 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "10k" (at 127 73.5 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "" (at 124 72 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 124 72 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid f53a432b-106c-5d9c-8e4b-0c33baa61cd1))
  (pin "2" (uuid 6b49ebd2-29d9-5421-a84b-4cce6ebe9167))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "R6") (unit 1))))
 )
-(wire (pts (xy 124 57.46) (xy 124 76.19)) (stroke (width 0) (type default)) (uuid e2795954-cb96-5dc0-bf10-ceb8c1a50e94))
-(wire (pts (xy 124 83.81) (xy 124 88)) (stroke (width 0) (type default)) (uuid fa697467-85fb-57cf-b41e-cc8c49ca6f6c))
-(symbol (lib_id "Controller:GND") (at 124 88 0) (unit 1) (in_bom no) (on_board no) (uuid e12a23c0-0747-5c30-a24f-a2fad31b537c)
- (property "Reference" "#PWR02" (at 124 88 0) (effects (font (size 1.27 1.27) )  hide))
- (property "Value" "GND" (at 124 92.2 0) (effects (font (size 1.27 1.27) )  ))
- (property "Footprint" "" (at 124 88 0) (effects (font (size 1.27 1.27) )  hide))
- (property "Datasheet" "" (at 124 88 0) (effects (font (size 1.27 1.27) )  hide))
+(wire (pts (xy 124 57.46) (xy 124 68.19)) (stroke (width 0) (type default)) (uuid e2795954-cb96-5dc0-bf10-ceb8c1a50e94))
+(wire (pts (xy 124 75.81) (xy 124 78)) (stroke (width 0) (type default)) (uuid fa697467-85fb-57cf-b41e-cc8c49ca6f6c))
+(symbol (lib_id "Controller:GND") (at 124 78 0) (unit 1) (in_bom no) (on_board no) (uuid e12a23c0-0747-5c30-a24f-a2fad31b537c)
+ (property "Reference" "#PWR02" (at 124 78 0) (effects (font (size 2.0 2.0) )  hide))
+ (property "Value" "GND" (at 124 82.2 0) (effects (font (size 2.0 2.0) )  ))
+ (property "Footprint" "" (at 124 78 0) (effects (font (size 2.0 2.0) )  hide))
+ (property "Datasheet" "" (at 124 78 0) (effects (font (size 2.0 2.0) )  hide))
  (pin "1" (uuid 74c23788-0384-5028-93a5-fff7428bbf7b))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "#PWR02") (unit 1))))
 )
 (junction (at 124 57.46) (diameter 0) (color 0 0 0 0) (uuid 38cd843e-9969-5fa6-b8ad-386aa5e8c712))
 (junction (at 170 60) (diameter 0) (color 0 0 0 0) (uuid 80950f8a-7d44-5a01-8c52-15edb6628176))
 (text "V2 = 1.47 V1" (at 103 97 0) (effects (font (size 1.2 1.2) ) (justify left) ) (uuid e8b4dcca-e77e-5f20-b612-bd2fd8e5dcd1))
-(global_label "BIAS" (shape input) (at 182 57.46 180) (effects (font (size 1.1 1.1) ) (justify right) ) (uuid 01d3220c-6d05-55c2-84e1-9432c9607b34))
+(global_label "BIAS" (shape input) (at 194 57.46 180) (effects (font (size 1.6 1.6) ) (justify right) ) (uuid 01d3220c-6d05-55c2-84e1-9432c9607b34))
 (symbol (lib_id "Controller:R_US") (at 201 57.46 90) (unit 1) (in_bom yes) (on_board yes) (uuid 18755d37-66c1-5d27-bf8e-52993e35b7e5)
- (property "Reference" "R9" (at 195 53.46 90) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "100k" (at 201 53.46 90) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "" (at 201 57.46 90) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 201 57.46 90) (effects (font (size 1.27 1.27) ) (justify left) hide))
+ (property "Reference" "R9" (at 201 50.46 90) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "100k" (at 201 53.46 90) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "" (at 201 57.46 90) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 201 57.46 90) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid 157efd14-2653-55e1-8bc6-4c84b874c7bc))
  (pin "2" (uuid be4fe6e4-0ee2-5174-9df8-7ca7c54514f6))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "R9") (unit 1))))
 )
 (symbol (lib_id "Controller:R_US") (at 201 62.54 90) (unit 1) (in_bom yes) (on_board yes) (uuid 35ae994f-0bb5-558e-97fd-c8e918149486)
- (property "Reference" "R7" (at 195 66.54 90) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "100k" (at 201 66.54 90) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "" (at 201 62.54 90) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 201 62.54 90) (effects (font (size 1.27 1.27) ) (justify left) hide))
+ (property "Reference" "R7" (at 201 66.54 90) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "100k" (at 201 69.54 90) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "" (at 201 62.54 90) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 201 62.54 90) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid 193364c9-044c-5132-bb1b-4aa9a871f6ba))
  (pin "2" (uuid 86fd7ce4-d1b4-5d1d-9135-136382e9a31b))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "R7") (unit 1))))
 )
-(wire (pts (xy 182 57.46) (xy 197.19 57.46)) (stroke (width 0) (type default)) (uuid f67c4674-36d1-5613-bbbd-67591d66c1a8))
+(wire (pts (xy 194 57.46) (xy 197.19 57.46)) (stroke (width 0) (type default)) (uuid f67c4674-36d1-5613-bbbd-67591d66c1a8))
 (wire (pts (xy 204.81 57.46) (xy 215 57.46)) (stroke (width 0) (type default)) (uuid 6466d41b-da66-5a15-a247-004ffad22f38))
 (wire (pts (xy 215 57.46) (xy 222.38 57.46)) (stroke (width 0) (type default)) (uuid 30074dd1-1cf2-5119-9670-0d192af6ff42))
 (wire (pts (xy 180 60) (xy 188 60)) (stroke (width 0) (type default)) (uuid 4a202f59-bb38-530d-99a5-3bbedfae26ed))
@@ -2506,38 +2539,38 @@ FILE: hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_sch
 (wire (pts (xy 188 62.54) (xy 197.19 62.54)) (stroke (width 0) (type default)) (uuid 7e40214a-e0ac-51c4-9474-34327d479d22))
 (wire (pts (xy 204.81 62.54) (xy 215 62.54)) (stroke (width 0) (type default)) (uuid 0bba1db6-9fba-57aa-89d4-7fca9e227c34))
 (wire (pts (xy 215 62.54) (xy 222.38 62.54)) (stroke (width 0) (type default)) (uuid cf87e067-4f3a-5d4d-ae53-591a5f80edde))
-(symbol (lib_id "Controller:R_US") (at 237 37 90) (unit 1) (in_bom yes) (on_board yes) (uuid 6cf4dc24-ee86-528b-b57c-4ee1ce3c2fcd)
- (property "Reference" "R10" (at 231 33 90) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "100k" (at 237 33 90) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "" (at 237 37 90) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 237 37 90) (effects (font (size 1.27 1.27) ) (justify left) hide))
+(symbol (lib_id "Controller:R_US") (at 237 47 90) (unit 1) (in_bom yes) (on_board yes) (uuid 6cf4dc24-ee86-528b-b57c-4ee1ce3c2fcd)
+ (property "Reference" "R10" (at 237 40 90) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "100k" (at 237 43 90) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "" (at 237 47 90) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 237 47 90) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid 8959df2e-3009-5a90-81e3-4b3a768793d7))
  (pin "2" (uuid 3bd7efd7-8d98-5dbb-807a-43674e4b5fc3))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "R10") (unit 1))))
 )
-(wire (pts (xy 215 57.46) (xy 215 37)) (stroke (width 0) (type default)) (uuid 35d865c1-270d-5dde-85c3-a32d8ed95ded))
-(wire (pts (xy 215 37) (xy 233.19 37)) (stroke (width 0) (type default)) (uuid a95565ac-9454-5aa9-8ce4-6ee39dcb24f0))
-(wire (pts (xy 240.81 37) (xy 256 37)) (stroke (width 0) (type default)) (uuid b9ccde09-2865-5250-967f-248dfbb34dba))
-(wire (pts (xy 256 37) (xy 256 60)) (stroke (width 0) (type default)) (uuid d7ff7fb3-a0d2-5b6a-b27b-4d98674cf587))
+(wire (pts (xy 215 57.46) (xy 215 47)) (stroke (width 0) (type default)) (uuid 35d865c1-270d-5dde-85c3-a32d8ed95ded))
+(wire (pts (xy 215 47) (xy 233.19 47)) (stroke (width 0) (type default)) (uuid a95565ac-9454-5aa9-8ce4-6ee39dcb24f0))
+(wire (pts (xy 240.81 47) (xy 256 47)) (stroke (width 0) (type default)) (uuid b9ccde09-2865-5250-967f-248dfbb34dba))
+(wire (pts (xy 256 47) (xy 256 60)) (stroke (width 0) (type default)) (uuid d7ff7fb3-a0d2-5b6a-b27b-4d98674cf587))
 (wire (pts (xy 237.62 60) (xy 256 60)) (stroke (width 0) (type default)) (uuid 708b9f1b-396c-5ee1-8d2a-1a8e1a170987))
 (wire (pts (xy 256 60) (xy 270 60)) (stroke (width 0) (type default)) (uuid dd4e69fc-cfca-57b7-ba3a-d2e2efc2cd58))
-(global_label "ADC-1" (shape output) (at 270 60 0) (effects (font (size 1.1 1.1) ) (justify left) ) (uuid 6d713cf3-557e-5154-8ae8-e436f6ed8b76))
-(symbol (lib_id "Controller:R_US") (at 215 80 0) (unit 1) (in_bom yes) (on_board yes) (uuid 8a2177aa-71e0-5be0-916a-902948975b53)
- (property "Reference" "R8" (at 218 78.5 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "100k" (at 218 81.5 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "" (at 215 80 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 215 80 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
+(global_label "ADC-1" (shape output) (at 270 60 0) (effects (font (size 1.6 1.6) ) (justify left) ) (uuid 6d713cf3-557e-5154-8ae8-e436f6ed8b76))
+(symbol (lib_id "Controller:R_US") (at 215 72 0) (unit 1) (in_bom yes) (on_board yes) (uuid 8a2177aa-71e0-5be0-916a-902948975b53)
+ (property "Reference" "R8" (at 218 70.5 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "100k" (at 218 73.5 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "" (at 215 72 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 215 72 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid 06bda8b4-db1d-5732-92a5-02fd46a0446f))
  (pin "2" (uuid c87a9fbf-890a-5b89-9744-3d1efd9d051a))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "R8") (unit 1))))
 )
-(wire (pts (xy 215 62.54) (xy 215 76.19)) (stroke (width 0) (type default)) (uuid fc5c8d9d-bd58-5881-93e5-11ea91c2ec13))
-(wire (pts (xy 215 83.81) (xy 215 88)) (stroke (width 0) (type default)) (uuid 2020dbcd-143e-5e7b-905f-56fff011f28b))
-(symbol (lib_id "Controller:GND") (at 215 88 0) (unit 1) (in_bom no) (on_board no) (uuid bdddd14a-a370-5987-850d-ac2286ffb135)
- (property "Reference" "#PWR03" (at 215 88 0) (effects (font (size 1.27 1.27) )  hide))
- (property "Value" "GND" (at 215 92.2 0) (effects (font (size 1.27 1.27) )  ))
- (property "Footprint" "" (at 215 88 0) (effects (font (size 1.27 1.27) )  hide))
- (property "Datasheet" "" (at 215 88 0) (effects (font (size 1.27 1.27) )  hide))
+(wire (pts (xy 215 62.54) (xy 215 68.19)) (stroke (width 0) (type default)) (uuid fc5c8d9d-bd58-5881-93e5-11ea91c2ec13))
+(wire (pts (xy 215 75.81) (xy 215 78)) (stroke (width 0) (type default)) (uuid 2020dbcd-143e-5e7b-905f-56fff011f28b))
+(symbol (lib_id "Controller:GND") (at 215 78 0) (unit 1) (in_bom no) (on_board no) (uuid bdddd14a-a370-5987-850d-ac2286ffb135)
+ (property "Reference" "#PWR03" (at 215 78 0) (effects (font (size 2.0 2.0) )  hide))
+ (property "Value" "GND" (at 215 82.2 0) (effects (font (size 2.0 2.0) )  ))
+ (property "Footprint" "" (at 215 78 0) (effects (font (size 2.0 2.0) )  hide))
+ (property "Datasheet" "" (at 215 78 0) (effects (font (size 2.0 2.0) )  hide))
  (pin "1" (uuid aeb0b0d9-d58f-57e2-8edd-bf8ca212726f))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "#PWR03") (unit 1))))
 )
@@ -2545,12 +2578,14 @@ FILE: hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_sch
 (junction (at 215 62.54) (diameter 0) (color 0 0 0 0) (uuid feda6649-cc59-5d6c-a980-c8149fc29b32))
 (junction (at 256 60) (diameter 0) (color 0 0 0 0) (uuid 75e717e0-22ca-5cb8-9569-eae42b66aa43))
 (text "COMMAND -> ADC-1 (0 to 5 V)" (at 188 97 0) (effects (font (size 1.2 1.2) ) (justify left) ) (uuid eec5127f-c911-555e-8239-8e48364dadc1))
+(label "V1" (at 104 62.54 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 61eaf56f-ed41-570f-ba25-1e370163f938))
+(label "V2" (at 188 62.54 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 71d8b899-d179-573d-9f40-efa245c3b6fd))
 (text "Hover-bias adjustment" (at 10 107 0) (effects (font (size 1.5 1.5) bold) (justify left) ) (uuid 106d29a6-aa3f-52a5-9076-11e154e228fc))
 (symbol (lib_id "Controller:R_US") (at 49 122 0) (unit 1) (in_bom yes) (on_board yes) (uuid 8d3fad50-d5e0-53b7-a9d3-b8136bb451b3)
- (property "Reference" "R11" (at 52 120.5 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "3.9k" (at 52 123.5 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "" (at 49 122 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 49 122 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
+ (property "Reference" "R11" (at 52 120.5 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "3.9k" (at 52 123.5 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "" (at 49 122 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 49 122 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid 863ec862-7400-5718-824f-925f0e4bf1be))
  (pin "2" (uuid 79beaba3-bcee-53c5-be64-097bb5ff5eba))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "R11") (unit 1))))
@@ -2558,20 +2593,20 @@ FILE: hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_sch
 (wire (pts (xy 49 118.19) (xy 35 118.19)) (stroke (width 0) (type default)) (uuid be59eb1f-daff-5f2b-b946-9c3533ade2ce))
 (wire (pts (xy 35 118.19) (xy 35 120)) (stroke (width 0) (type default)) (uuid 74815ccf-3dc1-505a-a7e8-fd04ab3537fb))
 (symbol (lib_id "Controller:GND") (at 35 120 0) (unit 1) (in_bom no) (on_board no) (uuid 9556ccc0-a217-550b-b966-154af33b5896)
- (property "Reference" "#PWR04" (at 35 120 0) (effects (font (size 1.27 1.27) )  hide))
- (property "Value" "GND" (at 35 124.2 0) (effects (font (size 1.27 1.27) )  ))
- (property "Footprint" "" (at 35 120 0) (effects (font (size 1.27 1.27) )  hide))
- (property "Datasheet" "" (at 35 120 0) (effects (font (size 1.27 1.27) )  hide))
+ (property "Reference" "#PWR04" (at 35 120 0) (effects (font (size 2.0 2.0) )  hide))
+ (property "Value" "GND" (at 35 124.2 0) (effects (font (size 2.0 2.0) )  ))
+ (property "Footprint" "" (at 35 120 0) (effects (font (size 2.0 2.0) )  hide))
+ (property "Datasheet" "" (at 35 120 0) (effects (font (size 2.0 2.0) )  hide))
  (pin "1" (uuid 003b9df3-7f30-50ed-8ce9-1af64803738f))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "#PWR04") (unit 1))))
 )
 (wire (pts (xy 49 125.81) (xy 49 130)) (stroke (width 0) (type default)) (uuid 427d2a32-331c-51d4-bf38-94a6846ec6ab))
 (wire (pts (xy 49 130) (xy 49 140.19)) (stroke (width 0) (type default)) (uuid 2df5a1f3-3537-5ec1-b264-6fbc32af8137))
 (symbol (lib_id "Controller:R_Potentiometer_US") (at 49 144 0) (unit 1) (in_bom yes) (on_board yes) (uuid 53eec043-ad31-56a9-816d-34897b0307e5)
- (property "Reference" "P1" (at 36 140 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "10k" (at 36 143 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "" (at 49 144 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 49 144 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
+ (property "Reference" "P1" (at 36 140 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "10k" (at 36 143 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "" (at 49 144 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 49 144 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid 0d2ba1cd-27be-5c68-aa94-9164165602d3))
  (pin "2" (uuid c533d8e3-28fc-5741-9379-5fdbee959646))
  (pin "3" (uuid 5c7520a9-e3fb-561f-bc9a-1aa3c7061986))
@@ -2580,21 +2615,21 @@ FILE: hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_sch
 (wire (pts (xy 49 147.81) (xy 49 158)) (stroke (width 0) (type default)) (uuid 1715e531-6437-5b5c-a31a-9dfcfb695b75))
 (wire (pts (xy 49 158) (xy 49 166.19)) (stroke (width 0) (type default)) (uuid 3e48f6e6-bfe9-5bfa-89f6-5728d1ddb430))
 (symbol (lib_id "Controller:R_US") (at 49 170 0) (unit 1) (in_bom yes) (on_board yes) (uuid ceb12000-57b2-57db-9870-2797be754163)
- (property "Reference" "R13" (at 52 168.5 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "22k" (at 52 171.5 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "" (at 49 170 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 49 170 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
+ (property "Reference" "R13" (at 52 168.5 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "22k" (at 52 171.5 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "" (at 49 170 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 49 170 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid 2967dd8b-91fc-57ec-a2dd-3625b494a338))
  (pin "2" (uuid caa7b1c3-32aa-5f38-bc82-fc4dd82be475))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "R13") (unit 1))))
 )
 (wire (pts (xy 49 173.81) (xy 49 181)) (stroke (width 0) (type default)) (uuid 3f25c4fb-3736-5c9b-871a-07a49e2572fb))
-(label "-15V" (at 49 181 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid 61eaf56f-ed41-570f-ba25-1e370163f938))
+(label "-15V" (at 49 181 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 1e10f318-3abc-570a-a708-8f72a2bc5096))
 (symbol (lib_id "Controller:R_US") (at 79 144 0) (unit 1) (in_bom yes) (on_board yes) (uuid 83003488-c172-58d7-a420-6ab1e6dd1cb6)
- (property "Reference" "R12" (at 82 142.5 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "1.2k" (at 82 145.5 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "" (at 79 144 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 79 144 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
+ (property "Reference" "R12" (at 82 142.5 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "1.2k" (at 82 145.5 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "" (at 79 144 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 79 144 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid 3334e58b-2e19-5d6c-af4b-2a78ab6b9504))
  (pin "2" (uuid bea5cfc0-20f1-5589-9186-6c644570ead8))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "R12") (unit 1))))
@@ -2606,19 +2641,19 @@ FILE: hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_sch
 (wire (pts (xy 52.81 144) (xy 62 144)) (stroke (width 0) (type default)) (uuid ee1f37bc-b695-50c8-936e-a9fbe98a95e9))
 (wire (pts (xy 62 144) (xy 62 151)) (stroke (width 0) (type default)) (uuid 205368ad-8df2-5083-bdae-6ad0ffea7ba6))
 (wire (pts (xy 62 151) (xy 67 151)) (stroke (width 0) (type default)) (uuid 49de4166-8e8d-5cc5-96eb-64ac4df5eb71))
-(global_label "BIAS" (shape output) (at 67 151 0) (effects (font (size 1.1 1.1) ) (justify left) ) (uuid 71d8b899-d179-573d-9f40-efa245c3b6fd))
+(global_label "BIAS" (shape output) (at 67 151 0) (effects (font (size 1.6 1.6) ) (justify left) ) (uuid f994efc3-04a2-5108-ad76-3ff7810c800b))
 (junction (at 49 130) (diameter 0) (color 0 0 0 0) (uuid 16bd19e1-f355-5445-80c3-e24bbcc15510))
 (junction (at 49 158) (diameter 0) (color 0 0 0 0) (uuid 6b245216-5563-5549-a6b5-6a35163c7412))
-(label "BIAS_A" (at 49 130 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid 1e10f318-3abc-570a-a708-8f72a2bc5096))
-(label "BIAS_B" (at 49 158 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid f994efc3-04a2-5108-ad76-3ff7810c800b))
+(label "BIAS_A" (at 49 130 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 47a7f142-bc9a-5980-9e9d-c7445a63a873))
+(label "BIAS_B" (at 49 158 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 5e952bef-8ecc-5449-bd27-5004a852e760))
 (text "Set DAC-1 = DAC-0; trim P1" (at 10 191 0) (effects (font (size 1.15 1.15) ) (justify left) ) (uuid d570d33f-8513-5c0d-a74b-158e837e42c0))
 (text "until ADC-1 = +2.500 V." (at 10 195 0) (effects (font (size 1.15 1.15) ) (justify left) ) (uuid adfcf4a8-30cc-5f72-a1c7-d9c90535af6a))
 (text "DAQ connections" (at 110 107 0) (effects (font (size 1.5 1.5) bold) (justify left) ) (uuid 20795f9f-5435-5b79-bd96-f76d98a2b482))
 (symbol (lib_id "Controller:Conn_01x05") (at 163 129.08 0) (unit 1) (in_bom yes) (on_board yes) (uuid 4868f851-706d-50b6-9d57-931766aaa6c2)
- (property "Reference" "J1" (at 164.5 117 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "DAQ interface" (at 164.5 120 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "" (at 163 129.08 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 163 129.08 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
+ (property "Reference" "J1" (at 164.5 117 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "DAQ interface" (at 164.5 120 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "" (at 163 129.08 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 163 129.08 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid 49bbb12b-9b6c-59e4-9596-ddf3d4852e2b))
  (pin "2" (uuid c8e438d2-83a8-5049-955c-3f9ae7453d49))
  (pin "3" (uuid 278ed2e3-1c09-524f-aa7f-c99c30312811))
@@ -2627,75 +2662,136 @@ FILE: hardware/kicad/Kitticopter_3OpAmp_Controller.kicad_sch
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "J1") (unit 1))))
 )
 (wire (pts (xy 157.92 124) (xy 148 124)) (stroke (width 0) (type default)) (uuid d11ecfc8-8795-5908-ae28-bb14f159934f))
-(label "DAC-1" (at 148 124 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid 47a7f142-bc9a-5980-9e9d-c7445a63a873))
+(label "DAC-1" (at 148 124 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 8ad47f8d-fa2c-5b40-b532-655d413b43b9))
 (text "DAC-1 / reference" (at 169 124 0) (effects (font (size 1.1 1.1) ) (justify left) ) (uuid cad88f78-61e4-5d96-9ad4-480c55dc4535))
 (wire (pts (xy 157.92 126.54) (xy 148 126.54)) (stroke (width 0) (type default)) (uuid 993f958d-a11c-5cde-bd10-cd1a2333cee8))
-(label "DAC-0" (at 148 126.54 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid 5e952bef-8ecc-5449-bd27-5004a852e760))
+(label "DAC-0" (at 148 126.54 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid c7c69ce6-bcc9-56a6-824a-b66216e9ff30))
 (text "DAC-0 / sensor" (at 169 126.54 0) (effects (font (size 1.1 1.1) ) (justify left) ) (uuid 2468cb55-ca1d-5e79-9b30-cb7b7d831e8c))
 (wire (pts (xy 157.92 129.08) (xy 148 129.08)) (stroke (width 0) (type default)) (uuid 728a0f44-828e-517b-85d8-8630129613f4))
-(label "ADC-1" (at 148 129.08 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid 8ad47f8d-fa2c-5b40-b532-655d413b43b9))
+(label "ADC-1" (at 148 129.08 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 90fcc6e6-afb3-5bfe-aefd-469375394dfa))
 (text "ADC-1 / command" (at 169 129.08 0) (effects (font (size 1.1 1.1) ) (justify left) ) (uuid c54db428-c582-5f9f-96d7-23cd11cadfa3))
 (wire (pts (xy 157.92 131.62) (xy 148 131.62)) (stroke (width 0) (type default)) (uuid 63b306af-4e2d-537a-a9b8-dcae0c515bb9))
-(label "DAC-0" (at 148 131.62 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid c7c69ce6-bcc9-56a6-824a-b66216e9ff30))
+(label "DAC-0" (at 148 131.62 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 73e6c75e-4e31-5ed7-9891-507792909e47))
 (text "ADC-2 / sensor monitor" (at 169 131.62 0) (effects (font (size 1.1 1.1) ) (justify left) ) (uuid 3c18f62f-2fbb-5a1a-a1fb-696d6aaf9d64))
 (wire (pts (xy 157.92 134.16) (xy 148 134.16)) (stroke (width 0) (type default)) (uuid 19f5b0a2-a3ba-5827-8053-afdf1b7c962b))
-(label "GND" (at 148 134.16 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid 90fcc6e6-afb3-5bfe-aefd-469375394dfa))
+(label "GND" (at 148 134.16 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid bc3fcba3-d5f1-523c-a75a-d4458dff8350))
 (text "Common DAQ ground" (at 169 134.16 0) (effects (font (size 1.1 1.1) ) (justify left) ) (uuid d6d75a01-803c-5608-8a81-1734dc7c1036))
 (text "J1 pin 2 and pin 4 share DAC-0." (at 110 144 0) (effects (font (size 1.15 1.15) ) (justify left) ) (uuid d6bba286-136d-5aea-bac3-cf83766f9fd7))
 (text "J1/J2 numbers are schematic mappings." (at 110 148 0) (effects (font (size 1.1 1.1) ) (justify left) ) (uuid cbdd782f-73aa-5b27-bd0d-b4050a1c34ab))
 (text "Supply input" (at 240 107 0) (effects (font (size 1.5 1.5) bold) (justify left) ) (uuid 9f74288e-176b-52f1-8339-89211e71c923))
 (symbol (lib_id "Controller:Conn_01x03") (at 270 126.54 0) (unit 1) (in_bom yes) (on_board yes) (uuid 4dd98dd4-84ca-57e1-acd3-0444a2039187)
- (property "Reference" "J2" (at 270.5 117 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Value" "Bench supply" (at 270.5 120 0) (effects (font (size 1.27 1.27) ) (justify left) ))
- (property "Footprint" "" (at 270 126.54 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
- (property "Datasheet" "" (at 270 126.54 0) (effects (font (size 1.27 1.27) ) (justify left) hide))
+ (property "Reference" "J2" (at 270.5 117 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Value" "Bench supply" (at 270.5 120 0) (effects (font (size 2.0 2.0) ) (justify left) ))
+ (property "Footprint" "" (at 270 126.54 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
+ (property "Datasheet" "" (at 270 126.54 0) (effects (font (size 2.0 2.0) ) (justify left) hide))
  (pin "1" (uuid b5a2cd02-b09f-53ee-98d3-6c8ef3b34e63))
  (pin "2" (uuid 8161cc9f-a88a-561b-bba6-3fa3a9697e80))
  (pin "3" (uuid 75616fbd-76b6-57e1-90ee-6e07d33c7bb3))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "J2") (unit 1))))
 )
 (wire (pts (xy 264.92 124) (xy 253 124)) (stroke (width 0) (type default)) (uuid 825b7c38-355b-5cca-9459-af2e7a3f7f21))
-(label "+15V" (at 253 124 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid 73e6c75e-4e31-5ed7-9891-507792909e47))
+(label "+15V" (at 253 124 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 832dafca-36b7-5a5f-9482-a5319d71d5b0))
 (text "+15V" (at 276 124 0) (effects (font (size 1.1 1.1) ) (justify left) ) (uuid 05474cef-e246-581d-b6c4-4f4178f24469))
 (wire (pts (xy 264.92 126.54) (xy 253 126.54)) (stroke (width 0) (type default)) (uuid 570236f2-a86b-55e2-915c-dfb48fd3a1ca))
-(label "GND" (at 253 126.54 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid bc3fcba3-d5f1-523c-a75a-d4458dff8350))
+(label "GND" (at 253 126.54 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 8ca28f99-bbcd-5f63-a95d-5009e00c6eae))
 (text "GND" (at 276 126.54 0) (effects (font (size 1.1 1.1) ) (justify left) ) (uuid ef2eda4f-d69c-5b79-a77a-e03a39e652a9))
 (wire (pts (xy 264.92 129.08) (xy 253 129.08)) (stroke (width 0) (type default)) (uuid 5e9a934d-7864-51ab-925f-2b510248ea81))
-(label "-15V" (at 253 129.08 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid 832dafca-36b7-5a5f-9482-a5319d71d5b0))
+(label "-15V" (at 253 129.08 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid da7811b6-2dcd-55a8-ae14-aadc1cab5351))
 (text "-15V" (at 276 129.08 0) (effects (font (size 1.1 1.1) ) (justify left) ) (uuid ff726d2d-c8a1-5131-ab35-1b3fc15878e8))
 (symbol (lib_id "Controller:PWR_FLAG") (at 241 143 0) (unit 1) (in_bom no) (on_board no) (uuid 9202909f-3ee8-5ce0-be5c-8a7ea62746c1)
- (property "Reference" "#FLG01" (at 241 139 0) (effects (font (size 1.27 1.27) )  hide))
- (property "Value" "" (at 241 139 0) (effects (font (size 1.27 1.27) )  ))
- (property "Footprint" "" (at 241 143 0) (effects (font (size 1.27 1.27) )  hide))
- (property "Datasheet" "" (at 241 143 0) (effects (font (size 1.27 1.27) )  hide))
+ (property "Reference" "#FLG01" (at 241 139 0) (effects (font (size 2.0 2.0) )  hide))
+ (property "Value" "" (at 241 139 0) (effects (font (size 2.0 2.0) )  ))
+ (property "Footprint" "" (at 241 143 0) (effects (font (size 2.0 2.0) )  hide))
+ (property "Datasheet" "" (at 241 143 0) (effects (font (size 2.0 2.0) )  hide))
  (pin "1" (uuid 286fe677-ee7d-5486-8a33-50bf9b359580))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "#FLG01") (unit 1))))
 )
 (wire (pts (xy 241 143) (xy 241 146)) (stroke (width 0) (type default)) (uuid 48cd1876-ac46-5fd1-a930-58d5f822ae70))
-(label "+15V" (at 241 146 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid 8ca28f99-bbcd-5f63-a95d-5009e00c6eae))
+(label "+15V" (at 241 146 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 87e6328d-21b0-5531-9db6-9140b4aa5482))
 (symbol (lib_id "Controller:PWR_FLAG") (at 253 143 0) (unit 1) (in_bom no) (on_board no) (uuid ede073a1-dd7f-5d5b-b9bf-cd96865dc3f0)
- (property "Reference" "#FLG02" (at 253 139 0) (effects (font (size 1.27 1.27) )  hide))
- (property "Value" "" (at 253 139 0) (effects (font (size 1.27 1.27) )  ))
- (property "Footprint" "" (at 253 143 0) (effects (font (size 1.27 1.27) )  hide))
- (property "Datasheet" "" (at 253 143 0) (effects (font (size 1.27 1.27) )  hide))
+ (property "Reference" "#FLG02" (at 253 139 0) (effects (font (size 2.0 2.0) )  hide))
+ (property "Value" "" (at 253 139 0) (effects (font (size 2.0 2.0) )  ))
+ (property "Footprint" "" (at 253 143 0) (effects (font (size 2.0 2.0) )  hide))
+ (property "Datasheet" "" (at 253 143 0) (effects (font (size 2.0 2.0) )  hide))
  (pin "1" (uuid 5339b392-a28c-5af8-9b2d-ff0273ed9c24))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "#FLG02") (unit 1))))
 )
 (wire (pts (xy 253 143) (xy 253 146)) (stroke (width 0) (type default)) (uuid 919b3fdb-3c04-52c2-861c-eb54833157a9))
-(label "GND" (at 253 146 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid da7811b6-2dcd-55a8-ae14-aadc1cab5351))
+(label "GND" (at 253 146 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid e55c0dad-6723-5b0a-acf7-ca3763a269eb))
 (symbol (lib_id "Controller:PWR_FLAG") (at 270 143 0) (unit 1) (in_bom no) (on_board no) (uuid 54d2b2a8-1d1f-5c68-97ff-4e048d11bd8d)
- (property "Reference" "#FLG03" (at 270 139 0) (effects (font (size 1.27 1.27) )  hide))
- (property "Value" "" (at 270 139 0) (effects (font (size 1.27 1.27) )  ))
- (property "Footprint" "" (at 270 143 0) (effects (font (size 1.27 1.27) )  hide))
- (property "Datasheet" "" (at 270 143 0) (effects (font (size 1.27 1.27) )  hide))
+ (property "Reference" "#FLG03" (at 270 139 0) (effects (font (size 2.0 2.0) )  hide))
+ (property "Value" "" (at 270 139 0) (effects (font (size 2.0 2.0) )  ))
+ (property "Footprint" "" (at 270 143 0) (effects (font (size 2.0 2.0) )  hide))
+ (property "Datasheet" "" (at 270 143 0) (effects (font (size 2.0 2.0) )  hide))
  (pin "1" (uuid d316df87-e32b-51c0-8d0c-b15bf2de9573))
  (instances (project "Kitticopter_3OpAmp_Controller" (path "/0d88bdcb-300b-577a-a5d1-082238875978" (reference "#FLG03") (unit 1))))
 )
 (wire (pts (xy 270 143) (xy 270 146)) (stroke (width 0) (type default)) (uuid fe24dc3a-863a-5398-bda9-7a6405fcd03a))
-(label "-15V" (at 270 146 0) (effects (font (size 1.1 1.1) ) (justify left bottom) ) (uuid 87e6328d-21b0-5531-9db6-9140b4aa5482))
+(label "-15V" (at 270 146 0) (effects (font (size 1.5 1.5) ) (justify left bottom) ) (uuid 3df65851-e457-56ff-8da1-b1813876496f))
 (text "LM741: 2 = IN-; 3 = IN+; 4 = -15 V; 6 = OUT; 7 = +15 V." (at 110 170 0) (effects (font (size 1.0 1.0) ) (justify left) ) (uuid 28a2c052-1690-57f5-b31e-817e55d18c17))
 (sheet_instances (path "/" (page "1")))
 )
+
+
+================================================================================
+FILE: hardware/kicad/export_report_panels.py
+================================================================================
+"""Create enlarged report views from an unchanged native KiCad SVG export.
+
+Usage: python export_report_panels.py path/to/Kitticopter_3OpAmp_Controller.svg
+First export that SVG with kicad-cli sch export svg --exclude-drawing-sheet.
+Inkscape is used for vector PDF and PNG conversion when installed.
+"""
+from pathlib import Path
+import argparse
+import copy
+import shutil
+import subprocess
+import xml.etree.ElementTree as ET
+
+NS = 'http://www.w3.org/2000/svg'
+ET.register_namespace('', NS)
+
+def export(svg_path, project_root):
+    raw = ET.parse(svg_path).getroot()
+    folder = project_root / 'report/figures'
+    hardware = project_root / 'hardware/kicad'
+    def crop(path, box):
+        root = copy.deepcopy(raw)
+        x, y, w, h = box
+        root.set('viewBox', f'{x} {y} {w} {h}')
+        root.set('width', f'{w}mm')
+        root.set('height', f'{h}mm')
+        ET.ElementTree(root).write(path, encoding='utf-8', xml_declaration=True)
+    crop(folder/'kicad_bias.svg', (22,113,72,72))
+    crop(hardware/'Kitticopter_3OpAmp_preview.svg', (0,20,297.0022,180))
+    combined = ET.Element(f'{{{NS}}}svg', {'viewBox':'0 0 112 145', 'width':'112mm', 'height':'145mm'})
+    # Each panel is a crop of the same export. V1 and V2 connect the panels.
+    for i, (x,y,w,h) in enumerate([(0,39,97,46),(99,39,79,46),(178,39,112,46)]):
+        child = copy.deepcopy(raw)
+        for key, value in {'viewBox':f'{x} {y} {w} {h}', 'x':'0', 'y':str(i*49), 'width':str(w), 'height':str(h)}.items():
+            child.set(key,value)
+        combined.append(child)
+    ET.ElementTree(combined).write(folder/'kicad_signal_stages.svg', encoding='utf-8', xml_declaration=True)
+    inkscape = shutil.which('inkscape')
+    if inkscape:
+        for stem in ['kicad_bias','kicad_signal_stages']:
+            subprocess.run([inkscape,str(folder/(stem+'.svg')),'--export-type=pdf',
+                            '--export-filename='+str(folder/(stem+'.pdf'))], check=True)
+        preview = hardware/'Kitticopter_3OpAmp_preview.svg'
+        subprocess.run([inkscape,str(preview),'--export-type=png','--export-width=4200',
+                        '--export-filename='+str(hardware/'Kitticopter_3OpAmp_preview.png')],check=True)
+        subprocess.run([inkscape,str(preview),'--export-type=pdf',
+                        '--export-filename='+str(folder/'kicad_controller.pdf')],check=True)
+    else:
+        print('SVG views exported; use Inkscape to convert them to PDF/PNG.')
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('native_svg', type=Path)
+    parser.add_argument('--project-root',type=Path,default=Path(__file__).resolve().parents[2])
+    args = parser.parse_args()
+    export(args.native_svg,args.project_root)
 
 
 ================================================================================
@@ -2792,15 +2888,6 @@ FILE: main.tex
 \def\ReportRoot{report/}
 \def\ProjectRoot{}
 \input{report/main.tex}
-
-
-================================================================================
-FILE: matlab/build_simulink_model.m
-================================================================================
-% Launch the Simulink model builder; no DAQ hardware is required.
-clear; clc;
-addpath(genpath(fileparts(mfilename('fullpath'))));
-model = create_simulink_model(lab_parameters());
 
 
 ================================================================================
@@ -3076,9 +3163,18 @@ nexttile;plot(t,u,'Color',C(1,:));ylabel('Command (V)');grid on;
 nexttile;plot(t,y,'Color',C(1,:));ylabel('Altitude (m)');grid on;
 nexttile;plot(t,sv,'Color',C(2,:));ylabel('Sensor (V)');xlabel('Time (s)');grid on;
 saveplot(f,target,'identification_record');
+f=figure('Visible','off');q=t>=14.5&t<=17.5;
+plot(t(q),u(q),'o-','Color',C(1,:));hold on;
+plot([14.5 15.9 15.9 17.5],[2.5 2.5 5 5],'--','Color',C(2,:));
+xlabel('Retained run time (s)');ylabel('Input command (V)');grid on;
+legend('Logged manual input','Ideal 2.5 V step approximation','Location','southeast');
+saveplot(f,target,'step_input_transition');
+[tm,vm_measured]=ode45(@(tt,state)(P.A*(interp1(t,u,tt,'linear')-P.hover_command_V)-state)/P.tau_s,...
+ t(t>=15.7),0,odeset('RelTol',1e-8,'AbsTol',1e-9,'MaxStep',0.05));
 f=figure('Visible','off');plot(t,v,'Color',C(1,:));hold on;plot(t,vm,'--','Color',C(2,:));
+plot(tm,vm_measured,':','Color',C(3,:));
 yline(0.632*mean(v(t>=120)),':','63.2%');xlabel('Time (s)');ylabel('Velocity (m/s)');
-legend('Backward difference','Adopted model','Location','southeast');grid on;
+legend('Backward difference','Adopted model','Model driven by recorded input','Location','southeast');grid on;
 saveplot(f,target,'velocity_identification');
 f=figure('Visible','off');tiledlayout(1,2,'TileSpacing','compact');
 valid=sv>0&sv<9.9&y>0;
@@ -3163,16 +3259,6 @@ exportgraphics(object,fullfile(target,[name '.pdf']),'ContentType','vector');
 exportgraphics(object,fullfile(target,[name '.png']),'Resolution',200);
 close(f);
 end
-
-
-================================================================================
-FILE: matlab/root_locus_design.m
-================================================================================
-% Run the detailed root locus method. Requires Control System Toolbox.
-clear; close all; clc;
-addpath(genpath(fileparts(mfilename('fullpath'))));
-P = lab_parameters();
-root_locus_result = run_root_locus_design(P);
 
 
 ================================================================================
@@ -3334,24 +3420,17 @@ end
 
 
 ================================================================================
-FILE: matlab/verify_controller.m
-================================================================================
-% Launch the original independent controller check.
-clear; close all; clc;
-addpath(genpath(fileparts(mfilename('fullpath'))));
-verify_nominal_controller(lab_parameters());
-
-
-================================================================================
 FILE: report/main.tex
 ================================================================================
-\documentclass[12pt,a4paper]{article}
+\documentclass[12pt,a4paper,fleqn]{article}
 \usepackage[utf8]{inputenc}
 \usepackage[english]{babel}
 \usepackage[top=1in,bottom=1in,left=1in,right=1in,headheight=15pt]{geometry}
 \usepackage{microtype,amsmath,amssymb,graphicx,booktabs,array,tabularx,float}
 \usepackage[table]{xcolor}
 \usepackage{tikz,circuitikz,fancyhdr,enumitem,listings,caption,titlesec}
+\usepackage{ragged2e}
+\setlength{\mathindent}{0pt}
 \usetikzlibrary{arrows.meta,positioning,calc}
 \definecolor{AngelBlue}{HTML}{8FC9E6}
 \definecolor{LinkBlue}{HTML}{397B9C}
@@ -3362,19 +3441,26 @@ FILE: report/main.tex
 \providecommand{\ProjectRoot}{../}
 \graphicspath{{\ReportRoot figures/}}
 % Computer Modern, margins and leading follow the supplied LaTeX template.
-\linespread{1.06}
-\setlength{\parskip}{8pt plus2pt minus2pt}
+\linespread{1.03}
+\setlength{\parskip}{5pt plus1pt minus1pt}
+\setlength{\parindent}{0pt}
+\setlength{\intextsep}{7pt}
+\setlength{\textfloatsep}{8pt}
+\setlength{\emergencystretch}{2em}
 \widowpenalty=10000\clubpenalty=10000
 \setlist{nosep,leftmargin=*}
 \renewcommand{\arraystretch}{1.14}
-\captionsetup{font=small,labelfont=bf,skip=5pt}
+\renewcommand{\tabularxcolumn}[1]{>{\RaggedRight\arraybackslash}p{#1}}
+\newcolumntype{P}[1]{>{\RaggedRight\arraybackslash}p{#1}}
+\captionsetup{font=small,labelfont=bf,skip=4pt,justification=raggedright,singlelinecheck=false}
 \pagestyle{fancy}\fancyhf{}
-\fancyhead[R]{\small\nouppercase{\leftmark}}\fancyfoot[C]{\thepage}
+\fancyhead[L]{\small\nouppercase{\leftmark}}\fancyfoot[L]{\thepage}
 \renewcommand{\headrulewidth}{0pt}
 % Chapter-style headings follow the supplied previous-year report.
-\titleformat{\section}[display]{\normalfont\LARGE\bfseries}
-  {\large Chapter \thesection}{13pt}{}[\thispagestyle{plain}]
-\titlespacing*{\section}{0pt}{12pt}{18pt}
+\titleformat{\section}[hang]{\normalfont\Large\bfseries}
+  {\thesection}{0.6em}{}
+\titlespacing*{\section}{0pt}{0pt}{10pt}
+\titlespacing*{\subsection}{0pt}{8pt}{5pt}
 \numberwithin{equation}{section}
 \makeatletter
 \renewcommand{\@pnumwidth}{2.2em}
@@ -3382,9 +3468,9 @@ FILE: report/main.tex
 \makeatother
 \counterwithin{figure}{section}\counterwithin{table}{section}
 \newcommand{\HRule}{\textcolor{AngelBlue}{\rule{\linewidth}{0.5mm}}}
-\newcommand{\fig}[4]{\begin{figure}[H]\centering\href{\RepoRoot/tree/\RepoBranch/report/figures}{\includegraphics[width=#2\linewidth]{#1}}\caption{#3}\label{#4}\end{figure}}
-\newcommand{\plot}[4]{\begin{figure}[H]\centering\href{\RepoRoot/tree/\RepoBranch/analysis/modules}{\includegraphics[width=#2\linewidth]{#1}}\caption{#3 Code: \RepoLink{analysis/modules}{Python}; \RepoLink{matlab/plots}{MATLAB}. Data: \RepoLink{results}{results}.}\label{#4}\end{figure}}
-\newcommand{\repfig}[5]{\begin{figure}[H]\centering\href{\RepoRoot/tree/\RepoBranch/#1}{\includegraphics[width=#3\linewidth]{#2}}\caption{#4}\label{#5}\end{figure}}
+\newcommand{\fig}[4]{\begin{figure}[H]\raggedright\href{\RepoRoot/tree/\RepoBranch/report/figures}{\includegraphics[width=#2\linewidth]{#1}}\caption{#3}\label{#4}\end{figure}}
+\newcommand{\plot}[4]{\begin{figure}[H]\raggedright\href{\RepoRoot/tree/\RepoBranch/analysis/modules}{\includegraphics[width=#2\linewidth]{#1}}\caption{#3 \RepoLink{analysis/modules}{Python}, \RepoLink{matlab/plots}{MATLAB}, \RepoLink{results}{data}.}\label{#4}\end{figure}}
+\newcommand{\repfig}[5]{\begin{figure}[H]\raggedright\href{\RepoRoot/tree/\RepoBranch/#1}{\includegraphics[width=#3\linewidth]{#2}}\caption{#4}\label{#5}\end{figure}}
 \newcommand{\page}{\clearpage}
 \newcommand{\unit}[1]{\,\mathrm{#1}}
 \newcommand{\Fref}[1]{\hyperref[#1]{Figure~\ref*{#1}}}
@@ -3395,8 +3481,14 @@ FILE: report/main.tex
 \newcommand{\thead}{\rowcolor{AngelBlue!28}}
 \input{\ReportRoot repository.tex}
 \begin{document}
+\RaggedRight
+\setlength{\abovedisplayskip}{5pt}
+\setlength{\belowdisplayskip}{5pt}
+\setlength{\abovedisplayshortskip}{4pt}
+\setlength{\belowdisplayshortskip}{4pt}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[L]{\thepage}\renewcommand{\headrulewidth}{0pt}}
 \hypersetup{pageanchor=false}
-\begin{titlepage}\thispagestyle{empty}\begin{center}
+\begin{titlepage}\thispagestyle{empty}\begin{flushleft}
 {\LARGE Lab 2 Report}\\[0.3cm]
 {\large Proportional Control}\\[0.6cm]
 \textcolor{AngelBlue}{\rule{0.60\linewidth}{0.5pt}}\\[1.0cm]
@@ -3409,14 +3501,10 @@ Department of Electrical Engineering\\
 University of Cape Town
 \vfill
 11 October 2026
-\end{center}\end{titlepage}
+\end{flushleft}\end{titlepage}
 \hypersetup{pageanchor=true}
 \pagenumbering{roman}
 \begingroup\small\setlength{\parskip}{0pt}\tableofcontents\endgroup\clearpage
-\phantomsection\addcontentsline{toc}{section}{List of Figures}
-\begingroup\small\setlength{\parskip}{0pt}\listoffigures\endgroup\clearpage
-\phantomsection\addcontentsline{toc}{section}{List of Tables}
-\begingroup\small\setlength{\parskip}{0pt}\listoftables\endgroup\clearpage
 \pagenumbering{arabic}
 \input{\ReportRoot sections/body.tex}
 \label{main:last}
@@ -3445,747 +3533,317 @@ FILE: report/repository.tex
 ================================================================================
 FILE: report/sections/appendices.tex
 ================================================================================
-\section{Photographs of the Final Controller}\label{app:photos}
-\Fref{fig:board} documents the soldered Veroboard implementation described in \Sref{sec:hardware}. The board has three eight-pin op-amp packages and a blue bias trimmer. The photograph records the final physical assembly; it does not establish every underside connection or measured resistance.
-\repfig{hardware}{../../hardware/veroboard.jpeg}{.84}{Supplied final Veroboard photograph. The three op-amp stages and adjustable bias trimmer are visible.}{fig:board}
-The circuit design specifies 741-type devices and bipolar supply rails. The current KiCad drawing contains no capacitors and hides unused offset-pin graphics. Device markings and underside wiring are not independently established by this top-side photograph. No photographs of handwritten calculations are used in this report.
-\page
-
-\section{Experimental Demonstration Record}\label{app:demo}
-The original controller-test display is retained in the \RepoLink{data/session2}{Session 2 evidence folder}. The altitude trace is replotted with Python in \Fref{fig:hardware}. The original application screenshot below is supporting demonstration evidence; the main numerical comparison is the regenerated Python plot.
-
-The full controller was connected during this test, as confirmed in \Sref{sec:tests}. The student also reported adjusting the physical potentiometer until the input was approximately 2.565 V. This recollection is separate from the later terminal readouts below.
-
-\repfig{data/session2}{../../data/session2/hardware_step_test.jpeg}{.90}{Original controller-demonstration screenshot from the laboratory application, retained as required evidence. The numerical response is replotted in \Fref{fig:hardware}.}{fig:demo}
-The numerical values transcribed in \Tref{tab:display} support the tracking and sensor checks.
-\begin{table}[H]\centering\small
-\caption{Numerical readouts transcribed from the retained test display.}\label{tab:display}
-\begin{tabular}{lr}\toprule\thead
-Field & Displayed value\\\midrule
-Student number & PTRJUN003\\
-Set point & 5.033 m\\
-Height & 4.897 m\\
-Tracking error & 0.137 m\\
-Angle of attack / command & 2.498 V\\
-Height (left panel) & 4.896 m\\
-Sensor output (left panel) & 4.553 V\\
-Elapsed time & 86.10 s\\\bottomrule
-\end{tabular}\end{table}
-The 0.001 m differences between the readouts are consistent with rounding or asynchronous display updates. The assessor's marking sheet and signature were not supplied, so an awarded demonstration mark is not claimed.
-\page
-
-\section{Simulink Configuration and Reproduction}\label{app:simulink}
-The supplied model diagram appears in \Fref{fig:originalmodel}; its results are replotted and compared in \Fref{fig:simcomparison}. The unaltered scope image is available through the \RepoLink{data/session2}{original evidence folder}. The digitised samples are stored separately in \RepoLink{results}{results}; they are not raw solver logs.
-\begin{table}[H]\centering\small
-\caption{Simulink parameters and test conditions.}\label{tab:simsettings}
-\begin{tabularx}{\linewidth}{p{46mm}X}\toprule\thead
-Block / condition & Setting\\\midrule
-Reference and sensor gain & 0.93 V/m each\\
-Proportional controller & 0.01432 V/V\\
-Hover add/subtract & 2.500 V in the nominal model\\
-Velocity transfer function & $14.2748/(8.1s+1)$\\
-Position integrator & Zero initial altitude\\
-Command / sensor saturation & Explicit reconstruction limits: 0--5 V / 0--10 V\\
-Supplied scope sequence & Reference 2.5 m initially, then 5 m at about 2.5 s; zero initial altitude\\
-Isolated design sequence & 0 to 5 m at $t=0$\\\bottomrule
-\end{tabularx}\end{table}
-The screenshot does not display the saturation block parameter dialogs; the limits in the table are explicit settings in the reconstruction. The original native \texttt{.slx} was not supplied. The \RepoLink{matlab/simulink}{MATLAB/Simulink scripts} build a native model, execute both sequences and export logged responses when run in MATLAB with Simulink.
-\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,rulecolor=\color{AngelBlue},columns=fullflexible,showstringspaces=false}
-\begin{lstlisting}[language=Matlab]
-addpath(genpath('matlab'));
-P = lab_parameters();
-run_simulink_tests(P);
-plot_report_figures(P);
-\end{lstlisting}
-The current report figures were rendered with Python. MATLAB reproduction code is provided; it has not been executed in this environment. The supplied Simulink scope is retained evidence of the student's simulation. Export and logged-output APIs follow the official documentation \cite{exportgraphics,sim}.
-\page
-\plot{simulink_comparison}{.87}{Full altitude and command comparison for the supplied Simulink sequence.}{fig:simcommand}
-\plot{nominal_response}{.88}{Isolated nominal 0-to-5 m design test, showing altitude and command. This is a distinct reference sequence from the supplied scope.}{fig:nominal}
-For this test the peak is 6.25402 m, overshoot 25.0804\%, peak time 22.405 s and final 2\% reference-band entry 54.89 s. The maximum command is 2.56659 V and the minimum 2.48330 V; neither reaches the command limits.
-\page
-
-\section{Complete Circuit and Interface}\label{app:circuit}
-\subsection{Signal Stages}
-The complete revised KiCad circuit is in \Fref{fig:circuit}, with an editable project and BOM in the \RepoLink{hardware/kicad}{KiCad folder}. With ideal op-amp inputs, the U1 positive divider is $V_+=r_vR_2/(R_1+R_2)$. Applying KCL at the inverting input gives
-\begin{align}
-V_1&=\left(1+\frac{R_4}{R_3}\right)\frac{R_2}{R_1+R_2}r_v-\frac{R_4}{R_3}y_v,\\
-&=(1+1/100)(1/101)r_v-(1/100)y_v=0.01(r_v-y_v),\\
-V_2&=\left(1+\frac{R_5}{R_6}\right)V_1=(1+4.7/10)V_1=1.47V_1.
-\end{align}
-U3's positive divider gives $V_+=V_2R_8/(R_7+R_8)=V_2/2$. Its bias loading is derived in \Sref{app:loading}.
-
-All three op-amps use pin 7 for $+15$ V, pin 4 for $-15$ V, pin 2 for the inverting input, pin 3 for the non-inverting input and pin 6 for output. Pins 1 and 5 (offset null) and pin 8 (NC) are unused. The hidden offset pins remain in the native symbol with their physical assignments; only their visible graphics and cross marks are omitted.
-\page
-
-\subsection{Bias Network and DAQ Interface}
-\begin{figure}[H]\centering
-\begin{circuitikz}[american,scale=.85,transform shape]
-\draw (0,0) node[ground]{} to[R,l=$R_{11}\ 3.9\,\mathrm{k}\Omega$] (0,-1.5) coordinate(A)
- to[R,l={$P_{\rm top}=10W\,\mathrm{k}\Omega$}] (0,-3) coordinate(W)
- to[R,l={$P_{\rm bot}=10(1-W)\,\mathrm{k}\Omega$}] (0,-4.5) coordinate(B)
- to[R,l=$R_{13}\ 22\,\mathrm{k}\Omega$] (0,-6) node[below]{$-15$ V};
-\draw (A)--(-3,-1.5) to[R,l_=$R_{12}\ 1.2\,\mathrm{k}\Omega$] (-3,-4.5)--(B);
-\draw (W) node[circ]{} -- (5,-3) -- (5,-3.7) node[right]{P1 wiper to $R_9$ / U3 pin 2};
-\node[left] at (A){A};\node[left] at (B){B};
-\node[align=left,anchor=west] at (4.1,-4.9){P1 total: 10 k$\Omega$\\$W=0.783081$ nominal\\wiper loaded through U3};
-\end{circuitikz}
-\caption{Bias potentiometer represented by its two segments, shunt resistor and end resistors. No capacitors are included in the revised KiCad drawing.}\label{fig:biasnetwork}
+\section{Parameter Check and Final Board}\label{app:evidence}\label{app:photos}
+\Fref{fig:paramcheck} records the submitted parameters and the laboratory check results. The displayed scores support the identification values used in \Sref{sec:id}; they are not uncertainty intervals.
+\begin{figure}[H]\raggedright
+\begin{minipage}[t]{.39\linewidth}\vspace{0pt}
+\href{\RepoRoot/tree/\RepoBranch/data/session1/evidence}{\includegraphics[width=\linewidth]{../../data/session1/evidence/parameter_check.png}}
+\end{minipage}\hfill
+\begin{minipage}[t]{.57\linewidth}\vspace{0pt}
+\small
+\begin{tabular}{lll}\toprule\thead
+Parameter & Submitted & Score\\\midrule
+$A$ & 14.2748 & 100\%\\
+$\tau$ & 8.1 s & 96\%\\
+$k_s$ & 0.93 V/m & 100\%\\\bottomrule
+\end{tabular}
+\par\vspace{8pt}The check reports ``Your results were recorded'' for PTRJUN003. The numerical values agree with the model in the original Simulink diagram. The source image and identification circuit reference are retained in the \RepoLink{data/session1/evidence}{evidence folder}.
+\end{minipage}
+\caption{Original Helicopter Parameter Check result for the adopted model.}\label{fig:paramcheck}
 \end{figure}
-\begin{table}[H]\centering\small
-\caption{DAQ and supply connections.}\label{tab:daq}
-\begin{tabularx}{\linewidth}{lX}\toprule\thead
-Connection & Controller node\\\midrule
-DAC-1 & $r_v$, U1 reference branch through $R_1$.\\
-DAC-0 & $y_v$, U1 sensor branch through $R_3$.\\
-ADC-2 & Sensor monitor at $y_v$.\\
-ADC-1 & Command $u$, U3 pin 6; permitted plant range 0--5 V.\\
-Ground & Shared by DAQ, bias network and bench supply.\\
-$\pm15$ V & Op-amp rails; these do not define the permitted plant command.\\\bottomrule
-\end{tabularx}\end{table}
-The LTspice source and supplied circuit image place $R_{11}$ at ground; the current native KiCad schematic agrees. The theoretical hover calibration sets $r_v=y_v$ and trims the loaded command to 2.500 V. This theoretical condition is distinct from the reported approximately 2.565 V input adjustment during the connected controller test. J1/J2 pin numbering is a logical channel/supply map rather than a verified physical connector terminal order.
+\Fref{fig:board} documents the final Veroboard controller described in \Sref{sec:hardware}. The three op-amp packages and adjustable bias trimmer are visible. The schematic records the intended connections; a top-side photograph alone does not establish underside continuity.
+\repfig{hardware}{../../hardware/veroboard.jpeg}{.70}{Final physical controller on Veroboard. The enlarged circuit is \Fref{fig:circuit}; the editable design is in the \RepoLink{hardware/kicad}{KiCad folder}.}{fig:board}
 \page
 
-\subsection{Bias Loading and Stage Gain Calculations}\label{app:loading}
-With the wiper unloaded, $R_P=P1\parallel R_{12}=10\parallel1.2=1.0714286$ k$\Omega$. The end-to-end current and pot-end voltages are
+\section{Demo Record and Original Simulink Scope}\label{app:demo}\label{app:simulink}
+The controller demonstration received full marks (20/20). \Fref{fig:demo} retains the required screenshot of tracking the setpoint. At 86.10 s it displays reference 5.033 m, height 4.897 m, command 2.498 V and sensor 4.553 V. The displayed error is 0.137 m; subtraction of rounded heights gives 0.136 m.
+\repfig{data/session2}{../../data/session2/hardware_step_test.jpeg}{.80}{Original controller tracking screenshot required by the lab brief. The numerical response is replotted in \Fref{fig:hardware}.}{fig:demo}
+\Fref{fig:originalscope} is the original supplied Simulink plot, preserved for comparison with the original model in \Fref{fig:originalmodel}. 
+\repfig{data/session2}{../../data/session2/simulink_scope.png}{.80}{Original Simulink scope: reference (yellow), command (blue) and altitude (orange). The matched-reference comparison is \Fref{fig:simcomparison}.}{fig:originalscope}
+Digitised values are approximate: Simulink altitude resolution is 0.0124 m/pixel, while the demo plot resolution is 0.0417 m/pixel. Source images, processed CSVs and \RepoLink{matlab/simulink}{Simulink reproduction scripts} remain accessible through the linked repository folders.
+\page
+
+\section{Supporting Calculations}\label{app:calculations}
+\label{app:circuit}\label{app:loading}\label{app:adjustment}
+The following enlarged KiCad view shows the bias source feeding U3. $R_{11}$ connects to ground; $R_{13}$ connects to $-15$ V. The pot wiper is loaded through $R_9$, so its unloaded voltage alone does not determine hover output.
+\begin{figure}[H]\raggedright
+\begin{minipage}[t]{.32\linewidth}\vspace{0pt}
+\href{\RepoRoot/tree/\RepoBranch/hardware/kicad}{\includegraphics[width=\linewidth]{kicad_bias.pdf}}
+\end{minipage}\hfill
+\begin{minipage}[t]{.64\linewidth}\vspace{0pt}\small
+\textbf{DAQ connections:} DAC-1 reference, DAC-0 sensor, ADC-1 controller output, ADC-2 sensor monitor. All grounds are common. Op-amp pin 7 is $+15$ V and pin 4 is $-15$ V.
+\par\vspace{6pt}U1: $a_f=R_4/R_3$, $a_r=(1+a_f)R_2/(R_1+R_2)$; nominally both are 0.01. U2: $g_2=1+R_5/R_6=1.47$. U3: $g_3=(1+R_{10}/(R_9+R_{\mathrm{th}}))R_8/(R_7+R_8)$.
+\end{minipage}
+\caption{Bias network and DAQ mapping supporting the enlarged signal stages in \Fref{fig:circuit}.}\label{fig:biasnetwork}
+\end{figure}
+For the unloaded network, $R_P=10\parallel1.2=1.071429$ k$\Omega$ and $I=-15/(3.9+R_P+22)=-0.556143$ mA. Thus $V_A=-2.168962$ V, $V_B=-2.764831$ V and $V_{\rm th}=V_A+W(V_B-V_A)$. Solving the loaded hover condition gives $W=0.783081$, $R_{\rm th}=5.423001$ k$\Omega$ and $V_{\rm th}=-2.635575$ V:
 \begin{align}
-I&=\frac{-15}{3.9+1.0714286+22}=-0.556143\unit{mA},\\
-V_A&=I(3.9)=-2.168962\unit{V},\qquad V_B=I(3.9+1.0714286)=-2.764831\unit{V},\\
-V_{\rm th}&=V_A+W(V_B-V_A).
+u_0&=-\frac{100}{100+5.423001}(-2.635575)=2.500000\unit{V},\\
+g_3&=\frac{1+100/(100+5.423001)}2=0.974280,\\
+K_p&=0.01(1.47)(0.974280)=0.014321913.
 \end{align}
-Set the supply sources to zero and inject a 1 A test current at the wiper. The node-conductance equations for A, B and the wiper are
+The reported 2.565 V potentiometer adjustment is an observation at an unlogged node/time. A permanent zero-error bias of 2.565 V instead of 2.5 V would predict $\delta y=0.065/(0.01432\times0.93)=4.88076$ m, so it is not silently substituted for theoretical hover. The isolated 5 m step initially commands 2.566588 V; the matched Simulink sequence reaches 2.564405 V.
+
+Independent resistor errors change $K_f=a_fg_2g_3$ and $y_\infty/x_\infty=a_r/a_f$. The 2,048 resistor/drag corners give 48.79\% maximum error and 38.95\% overshoot. For example, $a_f=0.9/110$ and $a_r=(1+a_f)1.1/(90+1.1)$ give $a_r/a_f=1.487864$. Matched ratios and two 680 $\Omega$ U1 resistors give $K_p=0.00973890$ and 23.44\% worst scalar overshoot; physical retesting is required.
+At the selected root $s_d=-0.0617284+j0.1402123$, pole angles are $113.7615^\circ$ and $66.2385^\circ$ (sum $180^\circ$). The magnitude condition gives
 \begin{equation}
-\begin{bmatrix}
-G_{11}+G_{12}+G_t&-G_{12}&-G_t\\
--G_{12}&G_{13}+G_{12}+G_b&-G_b\\
--G_t&-G_b&G_t+G_b
-\end{bmatrix}
-\begin{bmatrix}V_A'\\V_B'\\V_w'\end{bmatrix}
-=\begin{bmatrix}0\\0\\1\end{bmatrix},
+K_p=\frac{|s_d||s_d+0.1234568|}{1.6389585}=\frac{(0.1531988)^2}{1.6389585}=0.01432.
 \end{equation}
-where $G_i=1/R_i$, $G_t=1/(WP1)$ and $G_b=1/[(1-W)P1]$. The test voltage $V_w'$ gives $R_{\rm th}$. Solving the hover equation
-\begin{equation}
--\frac{R_{10}}{R_9+R_{\rm th}(W)}V_{\rm th}(W)=2.5
-\end{equation}
-gives $W=0.783080594$, $R_{\rm th}=5423.0014$ $\Omega$ and $V_{\rm th}=-2.6355750$ V. The loaded zero-error wiper is $-2.500$ V.
-
-For U3, define $r=R_{10}/(R_9+R_{\rm th})=0.94855960$. Since the non-inverting divider gives $V_+=V_2/2$, virtual short and KCL give
-\begin{align}
-u&=(1+r)V_+-rV_{\rm th}=\frac{1+r}{2}V_2-rV_{\rm th},\\
-g_3&=\frac{1+0.94855960}{2}=0.97427980,\\
-K_p&=\left(\frac{1}{100}\right)\left(1+\frac{4.7}{10}\right)(0.97427980)=0.014321913.
-\end{align}
-The ideal buffered result 0.0147 differs by 2.57\%, while the selected model value 0.01432 differs from the loaded calculation by only 0.0134\%. These are circuit-model calculations; a measured input/output slope of the final board was not supplied.
-\page
-
-\section{Detailed Calculations}\label{app:calculations}
-\input{\ReportRoot sections/model_calculations.tex}
-\page
-\subsection{Identification and Timing}
-\Tref{tab:rawsamples} gives selected original samples and derived velocities. The finite manual step is evident in the input column. Endpoint times are listed for consistency with the CSV; each derivative physically belongs to its interval midpoint.
-\begin{table}[H]\centering\small
-\caption{Selected identification samples and backward-difference results.}\label{tab:rawsamples}
-\begin{tabular}{rrrrr}\toprule\thead
-$t$ [s] & $u$ [V] & $y_v$ [V] & $y$ [m] & $v_i$ [m/s]\\\midrule
-15.7 & 2.495 & 0.000 & 0.000 & 0.00\\
-15.8 & 2.908 & 0.000 & 0.000 & 0.00\\
-15.9 & 4.607 & 0.000 & 0.000 & 0.00\\
-16.0 & 5.000 & 0.034 & 0.037 & 0.37\\
-16.9 & 5.000 & 2.098 & 2.256 & 4.08\\
-17.0 & 5.000 & 2.513 & 2.703 & 4.47\\
-23.9 & 5.000 & 10.000 & 104.823 & 22.36\\
-24.0 & 5.000 & 10.000 & 107.076 & 22.53\\
-24.1 & 5.000 & 10.000 & 109.345 & 22.69\\\bottomrule
-\end{tabular}\end{table}
-\begin{align}
-v(24.0)&=(107.076-104.823)/0.1=22.53\unit{m/s},\\
-v(24.1)&=(109.345-107.076)/0.1=22.69\unit{m/s},\\
-\bar v_\infty&=\frac1{404}\sum_{t_i\ge120}\frac{y_i-y_{i-1}}{0.1}=35.68747525\unit{m/s},\\
-A&=(35.68747525-0)/2.5=14.27499010\unit{m/(s\,V)},\\
-v_{63}&=0.632(35.68747525)=22.55448436\unit{m/s},\\
-t_{63}&=24.0+0.1\frac{22.55448436-22.53}{22.69-22.53}=24.01530272\unit{s},\\
-\tau_{63}&=24.01530272-15.9=8.11530272\unit{s}.
-\end{align}
-The exponential fit minimises $\sum_{17\le t_i\le60}[v_i-V_\infty(1-e^{-(t_i-t_0)/\tau})]^2$. Its outputs are $V_\infty=35.68747059$ m/s, $\tau=8.10393362$ s and $t_0=15.91583783$ s. These two methods corroborate rounding to $\tau=8.1$ s. They do not create two experimental trials.
-
-The sensor least-squares fit in \Eref{eq:sensor} excludes zero and clipped pairs. The check $k_s(2.703)=0.93(2.703)=2.51379$ V agrees with the recorded 2.513 V within rounding.
-\page
-
-\input{\ReportRoot sections/root_locus_calculations.tex}
-\subsection{Root-Locus Angle and Magnitude Checks}
-\textbf{Step 6 -- Verify the pole position.}
-The locus for variable $K_p$ uses $G_0(s)=k_sG_y(s)=(Ak_s/\tau)/[s(s+1/\tau)]$, where $Ak_s/\tau=1.638959$ s$^{-2}$. At the selected upper pole $s_d=-0.0617284+j0.1402123$,
-\begin{align}
-\angle s_d&=113.76147^\circ,\qquad
-\angle(s_d+1/\tau)=66.23853^\circ,\\
-\angle G_0(s_d)&=-113.76147^\circ-66.23853^\circ=-180^\circ,\\
-K_p&=\frac1{|G_0(s_d)|}
-=\frac{|s_d|\,|s_d+1/\tau|}{Ak_s/\tau}
-=\frac{(0.153198845)^2}{1.63895852}=0.01432.
-\end{align}
-Both the negative-feedback angle criterion and magnitude criterion are satisfied. The quadratic roots independently give the same pole pair.
-
-\page
-\subsection{Nominal Step and Settling Calculation}
-\textbf{Step 7 -- Evaluate the time response.}
-Substituting into \Eref{eq:exactstep},
-\begin{equation}
-y(t)=5\left[1-e^{-0.061728395t}
-\left(\cos(0.140212308t)+0.44025\sin(0.140212308t)\right)\right].
-\end{equation}
-The first peak occurs at $t_p=\pi/\omega_d=22.405969$ s. Since $\cos\pi=-1$ and $\sin\pi=0$,
-\begin{equation}
-y(t_p)=5[1+e^{-0.061728395(22.405969)}]=6.254019\unit{m},
-\end{equation}
-so $M_p=(6.254019-5)/5\times100=25.080375\%$.
-
-\textbf{Step 8 -- Calculate settling.} The error envelope satisfies $|y-5|/5\le e^{-\sigma t}/\sqrt{1-\zeta^2}$. Solving this bound for 2\% gives
-\begin{equation}
-T_{\rm env}=-\frac{\ln(0.02\sqrt{1-0.4029299^2})}{0.061728395}=64.80975\unit{s}.
-\end{equation}
-Actual settling is found by evaluating the full response, locating the last sample for which $|y-5|>0.1$ m, and taking the next sample. A 0.005 s grid gives 54.89 s. This definition agrees with reference-based settling calculations \cite{stepinfo}.
-
-\textbf{Step 9 -- Check command headroom.} Command headroom follows from $u=2.5+K_pk_s(5-y)$: the highest command is 2.566588 V at the step, and the lowest is $2.5-0.01432(0.93)(1.254019)=2.483299$ V at the altitude peak. Neither reaches the 0 or 5 V limit.
-\page
-
-\subsection{Aerodynamic and Component Uncertainty}
-With fixed $k_T$, the uncertain characteristic polynomial is $s^2+b's+k_TK_pk_s$. The worst scalar case has $b'=0.9b_0$ and $K_p'=1.1K_{p,0}$. Applying the required damping ratio gives
-\begin{equation}\label{eq:jointbound}
-K_{p,0}<\frac{(0.9b_0)^2}{4k_Tk_s\zeta_{\min}^2(1.1)}
-=\frac{0.81}{1.1}(0.01815443)=0.01336826.
-\end{equation}
-At the supplied gain the worst-case damping is $(0.9/\sqrt{1.1})(0.4029299)=0.34575$, and \Eref{eq:overshoot} gives 31.42\% overshoot. This explains why passing drag-only uncertainty is insufficient for the joint case.
-
-For independent loop-resistor tolerances, use the U1 coefficients and U2/U3 gains defined in \Sref{sec:hardware}. Assign each of $R_1$--$R_{10}$ either 0.9 or 1.1 times its nominal value, then use both drag extremes. There are $2^{10}\times2=2048$ cases. The bias network is held at its nominal Thevenin resistance and zero-error output is recalibrated in each case. \Tref{tab:corners} reports this optimistic subset.
-\begin{table}[H]\centering\small
-\caption{Independent loop-resistor corner predictions.}\label{tab:corners}
-\begin{tabularx}{\linewidth}{Xr}\toprule\thead
-Quantity & Range / worst value\\\midrule
-Feedback gain $K_f$ & 0.009072--0.022784\\
-Reference/feedback ratio $a_r/a_f$ & 0.672104--1.487864\\
-Absolute DC tracking error & 48.7864\%\\
-Overshoot about each case's own final altitude & 38.9461\%\\\bottomrule
-\end{tabularx}\end{table}
-For example, $R_1=0.9(100\,\mathrm{k}\Omega)$, $R_2=1.1(1\,\mathrm{k}\Omega)$, $R_3=1.1(100\,\mathrm{k}\Omega)$ and $R_4=0.9(1\,\mathrm{k}\Omega)$ give
-\begin{equation}
-a_f=0.9/110=0.00818182,\quad
-\frac{a_r}{a_f}=\frac{(1+0.00818182)(1.1)/(90+1.1)}{0.00818182}=1.487864.
-\end{equation}
-Thus a 5 m reference tends to 7.43932 m even after hover recalibration. The type number cannot remove unequal reference and feedback scaling.
-\page
-\subsection{Practical Gain and Ratio Correction}
-The corner distributions in \Fref{fig:components} separate dynamic overshoot from DC ratio error.
-\plot{component_robustness}{.92}{Loop-resistor corners. Dashed limits are 30\% overshoot and 8\% tracking error. The histograms show corner counts, not probabilities.}{fig:components}
-Failure in this subset rejects a guarantee for all components. Bias-network and op-amp variations can add error. After matching the U1 ratios, a practical gain correction is to replace both 1 k$\Omega$ resistors with matched 680 $\Omega$ values:
-\begin{align}
-K_{p,\rm new}&=\frac{680}{100000}(1.47)(0.97427980)=0.009738901,\\
-\zeta_{\rm worst}&=\frac{0.9b_0}{2\sqrt{k_T(1.1K_{p,\rm new})k_s}}\approx0.4193,\\
-M_{p,\rm worst}&\approx23.44\%,\\
-|\delta u_b|_{\max}&=0.08(5)(0.009738901)(0.93)=3.623\unit{mV}.
-\end{align}
-This scalar check assumes matched reference and feedback ratios; it is not a guarantee for independent resistor corners. Lower gain increases damping but tightens the hover-bias allowance. The board must be recalibrated and retested after any change.
-\page
-
-\input{\ReportRoot sections/test_adjustment_calculations.tex}
-\page
-
-\subsection{Experimental Metrics and Uncertainty}
-The digitised plot uses pixel bounds $x=602\ldots1414$ for 0--120 s and $p_y=60\ldots540$ for 20--0 m. Therefore
-\begin{align}
-t&=\frac{x-602}{1414-602}(120),\qquad h=\frac{540-p_y}{540-60}(20),\\
-\Delta t&=0.147783\unit{s/pixel},\qquad\Delta h=0.041667\unit{m/pixel}.
-\end{align}
-The extracted peak is 6.229167 m at 22.019704 s. With the displayed reference, terminal height and zero starting altitude,
-\begin{align}
-e_f&=5.033-4.897=0.136\unit{m},\\
-\eta_{\rm track}&=100(1-0.136/5.033)=97.297834\%,\\
-M_{p,\rm ref}&=100(6.229167-5.033)/5.033=23.766475\%,\\
-\delta M_{p,\rm ref}&\approx100(0.041667)/5.033=0.82787\text{ percentage points}.
-\end{align}
-This practical overshoot metric uses the commanded reference. If the terminal display is used as a proxy for the actual settled output, the conventional final-output-normalised overshoot is $(6.229167-4.897)/4.897\times100\approx27.20\%$. Both estimates are below 30\%, but the screenshot alone does not establish an exact asymptotic output.
-\Tref{tab:comparison} compares the analytical, simulated and experimental metrics.
-\begin{table}[H]\centering\small
-\caption{Comparison of calculation, simulation and retained experiment.}\label{tab:comparison}
-\begin{tabularx}{\linewidth}{lXXX}\toprule\thead
-Metric & Analytical & Python nominal & Experiment\\\midrule
-Reference & 5.000 m & 5.000 m & 5.033 m\\
-Peak & 6.25402 m & 6.25402 m & $\approx6.229$ m\\
-Peak time & 22.40597 s & 22.405 s & $\approx22.020$ s\\
-Reference overshoot & 25.0804\% & 25.0804\% & $\approx23.7665\%$\\
-Tracking accuracy & 100\% ideal & $\to100\%$ & 97.2978\% displayed\\
-2\% reference settling & 64.81 s envelope & 54.89 s & Not established\\\bottomrule
-\end{tabularx}\end{table}
-For the 5.033 m reference the 8\% band is $5.033(1\pm0.08)=4.63036$--5.43564 m. The 2\% band is 4.93234--5.13366 m. The terminal height lies inside the first but outside the second. The discrepancy cannot be removed by redefining the settling band around the biased terminal value while claiming reference tracking.
-
-The command-bias calculation uses \Eref{eq:bias}: $\delta y=0.002/(0.01432\times0.93)=0.150177$ m. The illustrative test in \Fref{fig:disturbance} injects a positive 2 mV bias at 70 s; it is a model prediction rather than a recorded disturbance experiment.
-\page
-
-\section{Additional Validation Plots}\label{app:validation}
-\Fref{fig:posval} checks the integrated position response; \Fref{fig:aero} compares the three aerodynamic cases listed in \Tref{tab:aero}. The underlying values are retained as CSV and JSON in the \texttt{results} folder.
-\plot{position_validation}{.88}{Position-domain model comparison and residuals for the retained identification run.}{fig:posval}
-\begin{table}[H]\centering\small
-\caption{Predicted performance under aerodynamic uncertainty.}\label{tab:aero}
-\begin{tabular}{lrrr}\toprule\thead
-Drag & Peak [m] & Overshoot [\%] & $T_{s,2\%}$ [s]\\\midrule
-$0.9b_0$ & 6.473 & 29.45 & 70.80\\
-$b_0$ & 6.254 & 25.08 & 54.89\\
-$1.1b_0$ & 6.058 & 21.15 & 54.59\\\bottomrule
-\end{tabular}\end{table}
-\plot{aerodynamic_robustness}{.88}{Predicted altitude responses for $b=0.9b_0,b_0,1.1b_0$, with local thrust slope held fixed.}{fig:aero}
-\page
-\Fref{fig:disturbance} demonstrates sensitivity to a defined input bias. At nominal gain its predicted final displacement is +0.150 m, within the 0.4 m allowance for a 5 m reference.
-\plot{disturbance_prediction}{.95}{Illustrative simulated response to +2 mV actuator bias added at 70 s. The shaded region is the 8\% tracking band.}{fig:disturbance}
-This simulation tests one stated disturbance amplitude. It does not imply rejection of arbitrary disturbance magnitudes or establish experimental disturbance performance.
-\page
-
-\section{Identification Data and Code}\label{app:data}
-\subsection{Data Provenance}
-The unmodified \texttt{data/session1/PTRJUN003\_raw.csv} contains time, command voltage, sensor voltage, altitude and stored speed. The processed copy excludes 31 pre-reset rows and adds recalculated velocity, midpoint time and model predictions; \Tref{tab:rawsamples} gives selected calculations.
-
-
-\subsection{Organised Source Code}\label{app:code}
-The numerical pipeline is separated by task. All stages read the shared \RepoFile{config/lab_parameters.json}{parameter file}; output CSVs and metrics are stored in \RepoLink{results}{results}. Python/Matplotlib generated every numerical report figure. The \RepoLink{matlab/plots}{MATLAB plotting folder} provides counterparts for all numerical figures; its analytical response plots do not require Control System Toolbox. The existing transfer-function checks require that toolbox, and the native model runner requires Simulink.
-\begin{table}[H]\centering\small
-\caption{Code modules and their calculation responsibilities.}\label{tab:modules}
-\begin{tabularx}{\linewidth}{p{43mm}X}\toprule\thead
-Source location & Responsibility\\\midrule
-\RepoLink{analysis/modules}{Python modules} & Identification, controller response/root locus, robustness, hardware digitisation and disturbance simulation.\\
-\RepoLink{matlab/identification}{MATLAB identification} & Backward differences, velocity gain, 63.2\% timing and sensor calibration.\\
-\RepoLink{matlab/design}{MATLAB design} & Root-locus geometry, angle/magnitude checks, gain limits and response plots.\\
-\RepoLink{matlab/validation}{MATLAB validation} & Independent nominal and aerodynamic controller checks.\\
-\RepoLink{matlab/simulink}{Simulink model and tests} & Builds the model and logs both reference sequences.\\
-\RepoLink{matlab/plots}{MATLAB plot reproduction} & Exports counterparts of all report plots as vector PDFs and PNGs.\\
-\RepoLink{calculations}{Worked calculations} & Separate calculation PDF, LaTeX equations and topic index.\\\bottomrule
-\end{tabularx}\end{table}
-Run the Python launcher from the project root:
-\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single,rulecolor=\color{AngelBlue},columns=fullflexible,showstringspaces=false}
-\begin{lstlisting}[language=bash]
-python -m pip install -r requirements.txt
-python analysis/analyse.py
-\end{lstlisting}
-In MATLAB, set the Current Folder to \texttt{matlab}, then enter:
-\begin{lstlisting}[language=Matlab]
-run_all
-run_simulink_tests(lab_parameters());
-root_locus_design
-\end{lstlisting}
-Dependencies and step conventions are recorded in the \RepoFile{CODE_GUIDE.md}{code guide}.
-\page
-\section{Repository and Reproduction}\label{app:repository}
-\RepoStatus\ Open the \href{\RepoRoot}{complete GitHub repository} or use the folder links in \Tref{tab:repo}. Figure, table, equation and appendix references remain internal PDF hyperlinks. The repository guide and calculation index explain how to reproduce each result.
-\begin{table}[H]\centering\small
-\caption{Clickable evidence map and corresponding Git folders.}\label{tab:repo}
-\begin{tabularx}{\linewidth}{p{37mm}X}\toprule\thead
-Folder / evidence link & Contents\\\midrule
-\RepoLink{data/session1}{\texttt{data/session1}} & Original identification CSV; source description in \Aref{app:data}.\\
-\RepoLink{data/session2}{\texttt{data/session2}} & Original experimental display and Simulink screenshots.\\
-\RepoLink{hardware}{\texttt{hardware}} & Board photograph, LTspice/KiCad design sources and circuit notes.\\
-\RepoLink{analysis}{\texttt{analysis}} & Python identification, simulation, digitisation and tolerance calculations.\\
-\RepoLink{matlab}{\texttt{matlab}} & Controller verification and Simulink model builder.\\
-\RepoLink{results}{\texttt{results}} & Processed CSVs, nominal traces, corners and scalar metrics.\\
-\RepoLink{report}{\texttt{report}} & LaTeX source, figures and compiled report.\\
-\RepoLink{scripts}{\texttt{scripts}} & Build, link configuration and folder indexes.\\
-\RepoLink{config}{\texttt{config}} & One shared parameter file for MATLAB and Python.\\
-\RepoLink{calculations}{\texttt{calculations}} & Worked calculation PDF and equation source.\\\bottomrule
-\end{tabularx}\end{table}
-
-\subsection{Build the Report}
-Extract the ZIP, keep its folder structure, install the Python requirements, and run:
-\begin{lstlisting}[language=bash]
-python -m pip install -r requirements.txt
-bash scripts/build.sh
-\end{lstlisting}
-The build regenerates numerical results and figures, then compiles \texttt{report/main.tex} with \texttt{latexmk -pdf}. A LaTeX distribution with TikZ and Circuitikz is required. The package also contains the compiled PDF for immediate viewing.
-
-\page
-\subsection{GitHub Folder Links}
-The report uses the repository supplied for this project:
-\begin{center}\href{\RepoRoot}{NateDogg247 / EEE3094S---Lab-2-PTRJUN003-}\end{center}
-The shared branch setting is \texttt{main}. Supporting-folder URLs use \texttt{/tree/main/}; individual source-file links use \texttt{/blob/main/}. \texttt{report/repository.tex} stores these settings centrally. Recompile the report after changing that file.
-
-\subsection{Page Count and Reproduction}
-The main report runs from Introduction on page 1 to Final Remarks on page 14. The title, table of contents, lists of figures and tables, references and appendices are excluded from this count. References use R-prefixed page numbers and appendices use A-prefixed page numbers.
-
-Click any numerical plot to open its Python source folder; each caption also links the MATLAB reproduction folder and numerical results. The numerical pipeline regenerates identification, root-locus, response, tolerance, Simulink-evidence and experimental metrics. The report and calculation supplement retain the corresponding worked equations. The available record contains one identification run and one controller display; it cannot establish repeated-trial averages or an assessor-awarded demonstration mark.
+\RepoLink{calculations}{Extended calculations}, \RepoLink{analysis/modules}{Python code}, \RepoLink{matlab/design}{MATLAB root locus}, \RepoLink{matlab/simulink}{Simulink tests} and \RepoFile{CODE_GUIDE.md}{reproduction instructions} are supplied outside the report.
 
 
 ================================================================================
 FILE: report/sections/body.tex
 ================================================================================
-\section{Introduction}\label{sec:intro}
-\subsection{Overview}
-This laboratory designs and tests an analogue proportional controller for the Kitticopter altitude plant. A data-acquisition (DAQ) interface connects the physical controller to simulated vertical motion. Session 1 identifies the plant; Session 2 designs, implements and validates the Veroboard controller \cite{template}.
+\section{System Modelling}\label{sec:model}\label{sec:intro}
+\subsection{Scope and Assumptions}
+This report identifies the Kitticopter altitude plant and evaluates its three-op-amp proportional controller. The DAQ interface connects the physical circuit to a simulated plant. The required outcomes are tracking accuracy above 92\%, overshoot below 30\%, and robustness to $\pm10\%$ aerodynamic and component uncertainty \cite{lab}.
 
-\subsection{Aim}
-The aim is to regulate altitude using proportional control while satisfying the four requirements in the 2026 laboratory brief \cite{lab}. \Tref{tab:requirements} translates these requirements into quantities that can be checked against the measured and simulated responses.
-\begin{table}[H]\centering\small
-\caption{Laboratory requirements and their evaluation measures.}\label{tab:requirements}
-\begin{tabularx}{\linewidth}{p{37mm}X}\toprule\thead
-Requirement & Evaluation measure\\\midrule
-Tracking accuracy $>92\%$ & $100(1-|x-y_\infty|/|x|)>92\%$ for a nonzero step reference.\\
-Overshoot $<30\%$ & $M_p=100(y_{\max}-y_\infty)/(y_\infty-y_0)<30\%$.\\
-Aerodynamic uncertainty $\pm10\%$ & Vary the identified drag coefficient $b$ by $\pm10\%$, keeping the thrust slope fixed.\\
-Component tolerance $\pm10\%$ & Examine changes in loop gain, reference/feedback ratio and hover bias.\\\bottomrule
-\end{tabularx}\end{table}
-
-\subsection{Objectives}
-\begin{enumerate}
-\item Derive the velocity and position models from the free-body diagram and identify the unknown drag, thrust and sensor parameters.
-\item Differentiate the recorded altitude, calculate the velocity gain and time constant, calibrate the sensor and validate the resulting model.
-\item Select and justify the proportional gain using root-locus and time-response calculations; check the nominal 5 m step and uncertainty cases.
-\item Document the three-stage controller circuit and assess the experimental response against the requirements.
-\end{enumerate}
-
-The supplied CSV, circuit files and test display support one identification run and one controller test. Numerical plots use Python with MATLAB reproduction code. Main-text Simulink and KiCad diagrams link to their sources; photographs and full derivations are in the appendices.
-\page
-
-\section{System Modelling}\label{sec:model}
-\subsection{Methodology}
-A control-oriented model is obtained by applying Newton's second law, linearising the actuator around hover and taking the Laplace transform. The laboratory permits unit mass, constant gravity and drag proportional to vertical velocity \cite{lab}. Upward altitude is positive; the unknown parameters are identified in \Sref{sec:id}. \Tref{tab:signals} defines all symbols and units.
-
-\subsection{Modelling}
-\subsubsection{Free-Body and Block Diagrams}
-\Fref{fig:fbd} shows thrust $f_t$ opposing weight $g$ and drag $b\dot y$. The complete voltage/altitude architecture is shown in \Fref{fig:block}.
-\begin{figure}[H]\centering
-\begin{tikzpicture}[>=Latex,scale=.67]
+The laboratory model uses unit mass, constant gravity and drag proportional to vertical velocity. Upward altitude is positive; thrust is linearised around hover. The experimentally unknown quantities are velocity gain $A$, time constant $\tau$ and sensor coefficient $k_s$.
+\subsection{Forces and Differential Equation}
+\Fref{fig:fbd} defines the force directions. For upward motion, thrust opposes gravity and drag; drag reverses when velocity reverses.
+\begin{figure}[H]\raggedright
+\href{\RepoRoot/tree/\RepoBranch/report/figures}{\color{black}\begin{tikzpicture}[>=Latex,scale=.66]
 \draw[fill=AngelBlue!28,rounded corners] (-1,-.3) rectangle (1,.3);
-\node at (0,0){unit mass};
+\node at (0,0){$m=1$};
 \draw[->,thick] (0,.3)--(0,1.55) node[above]{$f_t(t)$};
 \draw[->,thick] (-.55,-.3)--(-.55,-1.5) node[below left]{$g=9.81\unit{m/s^2}$};
 \draw[->,thick] (.75,-.3)--(.75,-1.5) node[below right]{$b\dot y(t)$};
 \draw[->] (2,-.8)--(2,1) node[above]{$+y$};
-\node[anchor=west,align=left] at (2.6,0){drag shown for\\upward velocity};
-\end{tikzpicture}
-\caption{Vertical forces on the normalised Kitticopter. Drag reverses with velocity.}\label{fig:fbd}
+\end{tikzpicture}}
+\caption{Forces on the mass-normalised Kitticopter.}\label{fig:fbd}
 \end{figure}
-
-\subsubsection{Dynamic Model}\label{sec:dynamic}
-For mass normalised to one, Newton's second law gives
-\begin{equation}\label{eq:forces}
-\ddot y=f_t-b\dot y-g+d_a.
-\end{equation}
-At hover, $f_{t,h}=g$ and $u_h=2.5$ V. The local actuator relation is $f_t=g+k_T(u-u_h)$, where the thrust slope $k_T$ is obtained from data. Substitution cancels nominal gravity:
-\begin{equation}\label{eq:dynamic}
-\ddot y+b\dot y=k_T\delta u+d_a,\qquad \delta u=u-u_h.
-\end{equation}
-The thrust-to-velocity plant is $V(s)/\Delta F_t(s)=1/(s+b)$. Multiplication by $k_T$ gives the voltage-input model. With zero initial conditions and $d_a=0$, the voltage-input plants are
+Newton's second law and the local thrust relation give
 \begin{align}
-G_v(s)&=\frac{V(s)}{\Delta U(s)}=\frac{k_T}{s+b}=\frac{A}{\tau s+1},\quad
-\tau=\frac1b,\quad A=\frac{k_T}{b},\label{eq:velocityplant}\\
-G_y(s)&=\frac{Y(s)}{\Delta U(s)}=\frac{G_v(s)}s=\frac{A}{s(\tau s+1)}.\label{eq:plant}
+\ddot y&=f_t-b\dot y-g+d_a,\qquad f_t=g+k_T(u-u_h),\label{eq:forces}\\
+\ddot y+b\dot y&=k_T\delta u+d_a,\qquad \delta u=u-u_h,\quad u_h=2.5\unit{V}.\label{eq:dynamic}
 \end{align}
+Here $y$ is altitude [m], $u$ is command [V], $b$ is drag [s$^{-1}$], $k_T$ is thrust slope [m/(s$^2$ V)] and $d_a$ is acceleration disturbance [m/s$^2$]. Gravity cancels at the correctly calibrated hover point.
+\subsection{Transfer Functions}
+With zero initial conditions and no disturbance, taking Laplace transforms yields
+\begin{align}
+\frac{V(s)}{\Delta F_t(s)}&=\frac1{s+b},\qquad
+G_v(s)=\frac{V(s)}{\Delta U(s)}=\frac{k_T}{s+b}=\frac{A}{\tau s+1},\label{eq:velocityplant}\\
+G_y(s)&=\frac{Y(s)}{\Delta U(s)}=\frac{A}{s(\tau s+1)},\qquad \tau=1/b,\quad A=k_T/b.\label{eq:plant}
+\end{align}
+The position integrator explains why a constant command above hover produces continually increasing altitude rather than a settled position. Differentiating altitude therefore exposes a first-order response suitable for identification.
 \page
 
-\begin{figure}[H]\centering
-\resizebox{\linewidth}{!}{\begin{tikzpicture}[>=Latex,block/.style={draw,fill=AngelBlue!22,minimum height=9mm,minimum width=15mm},sum/.style={draw,circle,inner sep=1pt,minimum size=6mm}]
-\node (x) at (0,0){$x$ (m)};\node[block] (ksr) at (1.5,0){$k_s$};
-\node[sum] (err) at (3,0){$\Sigma$};\node[block] (kp) at (4.4,0){$K_p$};
-\node[sum] (bias) at (5.8,0){$\Sigma$};\node[block] (sat) at (7.3,0){0--5 V};
-\node[sum] (sub) at (9,0){$\Sigma$};\node[block] (gv) at (11,0){$\dfrac{A}{\tau s+1}$};
-\node[block] (int) at (13,0){$1/s$};\node (y) at (14.5,0){$y$ (m)};
-\draw[->] (x)--(ksr);\draw[->] (ksr)--node[above]{$r_v$}(err);\draw[->] (err)--node[above]{$e_v$}(kp);
-\draw[->] (kp)--(bias);\draw[->] (bias)--(sat);\draw[->] (sat)--node[above]{$u$}(sub);
-\draw[->] (sub)--node[above]{$\delta u$}(gv);\draw[->] (gv)--node[above]{$v$}(int);\draw[->] (int)--(y);
-\draw[->] (5.8,1.2)node[above]{$u_h=2.5$ V}--node[right]{$+$}(bias);
-\draw[->] (9,1.2)node[above]{$u_h$}--node[right]{$-$}(sub);
-\node[block] (ksf) at (8,-1.6){$k_s$};
-\draw[->] (13.8,0)|-(ksf);\draw[->] (ksf)-|(err) node[pos=.94,left]{$-$};
+\subsection{Complete Signal Architecture}
+\Fref{fig:block} distinguishes the position reference from the voltage command. Both reference and altitude are scaled by $k_s$ [V/m]; the controller acts on their voltage difference.
+\begin{figure}[H]\raggedright
+\href{\RepoRoot/tree/\RepoBranch/report/figures}{\color{black}\begin{tikzpicture}[>=Latex,line width=.8pt,font=\small,
+ block/.style={draw,fill=AngelBlue!22,minimum height=10mm,minimum width=16mm,align=left},
+ sum/.style={draw,circle,inner sep=1pt,minimum size=7mm}]
+\node (x) at (0,0){$x$ [m]};
+\node[block] (ksr) at (1.5,0){$k_s$};
+\node[sum] (err) at (3.2,0){$\Sigma$};
+\node[block] (kp) at (5.1,0){$K_p$};
+\node[sum] (bias) at (7.1,0){$\Sigma$};
+\node[block] (sat) at (9.6,0){0--5 V};
+\coordinate (u) at (12.5,0);
+\draw[->] (x)--(ksr);
+\draw[->] (ksr)--node[above=5.5mm]{$r_v$ [V]}node[pos=.92,below]{$+$}(err);
+\draw[->] (err)--node[above=5.5mm]{$e_v$ [V]}(kp);
+\draw[->] (kp)--node[above=5.5mm]{$K_pe_v$}(bias);
+\draw[->] (bias)--node[above=5.5mm]{$u_c$ [V]}(sat);
+\draw[->] (sat)--node[above=5.5mm]{command $u$ [V]}(u);
+\draw[->] (7.1,0.95)node[above]{$u_h=2.5$ V}--node[right]{$+$}(bias);
+\node[sum] (sub) at (12.5,-3.0){$\Sigma$};
+\node[block] (thrust) at (10.4,-3.0){$k_T$};
+\node[sum] (force) at (8.2,-3.0){$\Sigma$};
+\node[block] (mech) at (5.9,-3.0){$\dfrac{1}{s+b}$};
+\node[block] (int) at (2.7,-3.0){$\dfrac{1}{s}$};
+\coordinate (ytap) at (1.0,-3.0);
+\node (y) at (-.1,-3.0){$y$ [m]};
+\draw[->] (u)--node[right]{plant input}(sub);
+\draw[->] (14.1,-3.0)node[above]{$u_h$ [V]}--node[above]{$-$}(sub);
+\draw[->] (sub)--node[above=5.5mm]{$\delta u$ [V]}(thrust);
+\draw[->] (thrust)--node[above=5.5mm]{$\delta f_t$}(force);
+\draw[->] (force)--node[above=5.5mm]{$a_{\mathrm{in}}$ [m/s$^2$]}(mech);
+\draw[->] (mech)--node[above=5.5mm]{speed $v$ [m/s]}(int);
+\draw[->] (int)--node[below=3mm]{position}(y);
+\draw[->] (8.2,-1.5)node[above,align=left]{acceleration disturbance\\$d_a$ [m/s$^2$]}--node[right]{$+$}(force);
+\draw[->] (8.2,-4.2)node[below,align=left]{uncompensated gravity\\$\Delta g$ [m/s$^2$]}--node[right]{$-$}(force);
+\node[block] (ksf) at (1.7,-1.5){$k_s$};
+\fill (ytap) circle (1.4pt);
+\draw[->] (ytap)--(1,-2.3)--(1.7,-2.3)--(ksf.south);
+\draw[->] (ksf)--(3.2,-1.5)--node[pos=.5,right]{$y_v$ [V]}node[pos=.88,left]{$-$}(err);
 \end{tikzpicture}}
-\caption{Altitude feedback loop, with voltage scaling, hover bias and command saturation.}\label{fig:block}
+\caption{Feedback architecture with explicit inputs, speed and position outputs. The lower row flows right to left. Hover cancels nominal gravity; $\Delta g$ is the uncompensated part.}\label{fig:block}
 \end{figure}
-\subsubsection{Closed-Loop Representation}
-The reference and sensor voltages are $r_v=k_sx$ and $y_v=k_sy$. The command law is
+The analogue law is
 \begin{equation}\label{eq:law}
-u=\operatorname{sat}_{[0,5]}\{2.5+K_p(r_v-y_v)\}.
+u=\operatorname{sat}_{[0,5]}\{2.5+K_p(r_v-y_v)\},\quad r_v=k_sx,\quad y_v=k_sy.
 \end{equation}
-\Fref{fig:block} applies $k_s$ once to each altitude signal. The hover terms cancel in the deviation plant. The stricter 0--5 V interface range is used for the command; the op-amp supply rails are separate. In the unsaturated region, $\Delta U=K_pk_s(X-Y)$, so
+The command range is 0--5 V, sensor range 0--10 V and op-amp supply $\pm15$ V. Hover is removed before the deviation plant.
+\subsection{Closed Loop, Error and Disturbances}
+In the unsaturated region, define $q=AK_pk_s$ and $D(s)=\tau s^2+s+q$. Substituting $\Delta U=K_pk_s(X-Y)$ into \Eref{eq:plant} gives
 \begin{align}
-L(s)&=K_pk_s\frac{A}{s(\tau s+1)},\\
-\frac{Y(s)}{X(s)}&=\frac{L(s)}{1+L(s)}=\frac{q}{D(s)},\quad q=AK_pk_s,\quad D(s)=\tau s^2+s+q,\label{eq:tracking}\\
-\frac{E_y(s)}{X(s)}&=\frac{\tau s^2+s}{D(s)},\qquad E_y=X-Y.
+L(s)&=K_pk_sG_y(s),\qquad \frac{Y(s)}{X(s)}=\frac{L}{1+L}=\frac{q}{D(s)},\label{eq:tracking}\\
+\frac{E_y(s)}{X(s)}&=\frac{\tau s^2+s}{D(s)},\qquad E_y=X-Y,\\
+\frac{Y(s)}{D_a(s)}&=\frac{\tau}{D(s)},\qquad \frac{Y(s)}{\Delta G(s)}=-\frac{\tau}{D(s)}.
 \end{align}
-An acceleration disturbance enters \Eref{eq:dynamic} directly:
-\begin{equation}\label{eq:disturbance}
-\frac{Y(s)}{D_a(s)}=\frac{\tau}{D(s)},\qquad
-\frac{Y(s)}{G(s)}=-\frac{\tau}{D(s)}\quad\text{for uncompensated gravity}.
-\end{equation}
-\subsubsection{Steady-State Properties}
-For $K_p>0$, the characteristic polynomial $s^2+bs+k_TK_pk_s$ is stable. The loop is Type 1, giving zero ideal step-reference error, finite ramp error and infinite parabolic-reference error. A constant command bias is not rejected with zero offset:
+Uncompensated gravity acts downward. For $K_p>0$ the loop is stable and Type 1, with zero ideal step error. A constant actuator bias causes a position offset:
 \begin{equation}\label{eq:bias}
 y_\infty-x_\infty=\frac{d_0}{k_TK_pk_s}=\frac{\delta u_b}{K_pk_s}.
 \end{equation}
-At 5 m and $K_p=0.01432$, the 8\% error allowance requires $|\delta u_b|<0.08(5)(0.01432)(0.93)=5.327$ mV. Full final-value calculations are in \Aref{app:calculations}.
+At 5 m, $K_p=0.01432$ and an 8\% error allowance require $|\delta u_b|<5.327$ mV: hover calibration and matched scaling are essential.
 \page
 
 \section{System Identification}\label{sec:id}
-\subsection{Introduction}
-Differentiating altitude removes the position integrator, giving a first-order velocity response from which gain and time constant are estimated. Sensor calibration uses unsaturated voltage/altitude pairs.
-
-\subsection{Methodology}
-\subsubsection{Step-Testing}
-The retained Session 1 command record starts at rest near 2.5 V and changes to 5 V. This voltage-identification run is distinct from the connected three-op-amp controller test described in \Sref{sec:tests}. The nominal input increment is $\Delta u=5.0-2.5=2.5$ V. The final voltage is held long enough to identify a steady velocity. \Fref{fig:record} shows the input, position and sensor channels from this run.
-
-\subsection{Experimental Setup and Data Files}
-The \RepoLink{data/session1}{Session 1 data folder} contains the unmodified \texttt{PTRJUN003\_raw.csv}; \Aref{app:data} gives its provenance. Of 1,634 rows, the first 31 precede a clock reset from 9.5 to 0.1 s and contain zero altitude. They are excluded from analysis. The retained 1,603 samples span 0.1--160.3 s at 0.1 s spacing. The reset is not another trial.
-\plot{identification_record}{.70}{Recorded identification input and outputs. The sensor-voltage plateau is clipping at 10 V; altitude continues increasing.}{fig:record}
-\page
-
-\subsection{Data Processing}
-\subsubsection{Velocity Computation}
-The metre channel is differentiated using a backward difference:
+\subsection{Step-Test Circuit and Recorded Input}
+\Fref{fig:stepcircuit} shows the Session 1 identification circuit and measured input. The 10 k$\Omega$ potentiometer wiper feeds the DAQ ADC; the software applies its logged command to the plant. Session 2 instead uses the complete controller circuit.
+\begin{figure}[H]\raggedright
+\begin{minipage}[t]{.32\linewidth}\vspace{0pt}
+\begin{circuitikz}[american,scale=.72,transform shape]
+\draw (0,4) node[above]{$+15$ V} -- (0,3.7) to[R,l_=$R_1\ 10\,\mathrm{k}\Omega$] (0,2.4)
+ to[R,l_=$P1\ 10\,\mathrm{k}\Omega$] (0,0) node[ground]{};
+\draw[<-] (0,1.2)--(1.3,1.2) node[right,align=left]{ADC\\input};
+\end{circuitikz}
+\end{minipage}\hfill
+\begin{minipage}[t]{.65\linewidth}\vspace{0pt}
+\href{\RepoRoot/tree/\RepoBranch/analysis/modules}{\includegraphics[width=\linewidth]{step_input_transition.pdf}}
+\end{minipage}
+\caption{Identification circuit (left) and logged input transition (right). \RepoLink{data/session1/evidence}{Original circuit}; \RepoLink{analysis/modules}{Python}, \RepoLink{matlab/plots}{MATLAB}, \RepoLink{results}{data}.}\label{fig:stepcircuit}\label{fig:inputtransition}
+\end{figure}
+The command changes from hover near 2.5 V through 2.908 V at 15.8 s and 4.607 V at 15.9 s to 5.000 V at 16.0 s. The increment is $\Delta u=2.5$ V. Its short manual transition is retained and checked against an ideal-step approximation, since $\tau\approx8.1$ s.
+\subsection{Data Preparation}
+The \RepoLink{data/session1}{unmodified CSV} has 1,634 rows. A clock reset separates 31 preliminary rows from the retained 1,603 samples (0.1--160.3 s at 0.1 s spacing). This is one trial; the reattached CSV is byte-identical. The 10 V sensor clips, so velocity uses the unclipped metre channel.
+\subsection{Parameter Calculations}
+A backward difference removes the position integrator:
 \begin{equation}\label{eq:diff}
-v_i=\frac{y_i-y_{i-1}}{t_i-t_{i-1}},\qquad t_{v,i}=\frac{t_i+t_{i-1}}2.
+v_i=\frac{y_i-y_{i-1}}{t_i-t_{i-1}}.
 \end{equation}
-For example, the 16.9 and 17.0 s positions are 2.256 and 2.703 m, giving $v=(2.703-2.256)/0.1=4.47$ m/s at midpoint 16.95 s. No smoothing is applied. The stored speed column agrees to CSV rounding. Differentiating the clipped voltage channel would incorrectly produce zero velocity; the metre channel avoids this error.
-
-\subsubsection{Estimation of Gain and Time Constant}
-The 404 velocity samples with endpoint time $t\ge120$ s give $v_\infty=35.68748$ m/s. With $v_0=0$,
+For example, $(2.703-2.256)/0.1=4.47$ m/s at the 16.95 s interval midpoint. The 404 tail differences with endpoint time $t\ge120$ s average to 35.68748 m/s, giving
 \begin{equation}\label{eq:gainid}
-A=\frac{v_\infty-v_0}{\Delta u}=\frac{35.68748-0}{5.0-2.5}
-=14.27499\unit{m/(s\,V)}.
+A=\frac{v_\infty-v_0}{\Delta u}=\frac{35.68748}{5.0-2.5}=14.27499\unit{m/(s\,V)}.
 \end{equation}
-The first-order step response is $v(t)=v_\infty[1-e^{-(t-t_0)/\tau}]$. At one time constant, $1-e^{-1}\approx0.632$, so $v_{63}=0.632(35.68748)=22.55448$ m/s. The measured crossing lies between 24.0 and 24.1 s:
-\begin{align}
-t_{63}&=24.0+\frac{22.55448-22.53}{22.69-22.53}(24.1-24.0)=24.01530\unit{s},\\
-\tau_{63}&=t_{63}-t_0\approx24.01530-15.9=8.11530\unit{s}.
-\end{align}
-A least-squares exponential fit over 17--60 s gives $V_\infty=35.68747$ m/s, $\tau=8.10393$ s and $t_0=15.91584$ s. Endpoint-labelled differences are used in that fit; the midpoint shift is absorbed in $t_0$, leaving $\tau$ unchanged.
-
-\subsubsection{Sensor Calibration (V/m)}
-Using 22 nonzero pairs with $0<y_v<9.9$ V, the zero-intercept least-squares coefficient is
+Sensor calibration uses 22 nonzero, unsaturated pairs ($0<y_v<9.9$ V):
 \begin{equation}\label{eq:sensor}
-k_s=\frac{\sum_i y_i y_{v,i}}{\sum_i y_i^2}=0.9300026\unit{V/m}\approx0.93\unit{V/m}.
+k_s=\frac{\sum_i y_i y_{v,i}}{\sum_i y_i^2}=0.9300026\unit{V/m}.
 \end{equation}
-The single-point check at 17.0 s is $2.513/2.703=0.92971$ V/m. The regression uses multiple unsaturated pairs rather than the clipped 10 V tail. Full processing equations and selected sample calculations are in \Aref{app:calculations}.
+The ratio $2.513/2.703=0.92971$ V/m agrees with this regression.
 \page
 
-\subsection{Results and Analysis}
-\subsubsection{Step Response Analysis}
-\Fref{fig:velocity} compares the differentiated measurements with the exponential fit and shows the 63.2\% crossing. Velocity tends to a constant while altitude continues rising, as expected for the lag-plus-integrator model.
-\plot{velocity_identification}{.73}{Velocity identification. The steady tail determines gain; interpolation and fitting determine the time constant.}{fig:velocity}
-\subsubsection{Identification Results}
-\Tref{tab:id} compares the two estimation methods. These are estimates from one run, not independent repeated trials. The rounded parameters reproduce the values used in the supplied Simulink model.
-\begin{table}[H]\centering\small
-\caption{Identification estimates and adopted design parameters.}\label{tab:id}
-\begin{tabular}{lrrr}\toprule\thead
-Method & $A$ [m/(s V)] & $\tau$ [s] & $k_s$ [V/m]\\\midrule
-Tail / 63.2\% crossing & 14.27499 & 8.11530 & ---\\
-Exponential / sensor fit & 14.27499 & 8.10393 & 0.930003\\
-Adopted model & 14.2748 & 8.1000 & 0.9300\\\bottomrule
-\end{tabular}\end{table}
-
-\subsection{Transfer Function Approximation}
-Substitution into \Eref{eq:velocityplant} and \Eref{eq:plant} gives
-\begin{equation}\label{eq:identified}
-\boxed{G_v(s)=\frac{14.2748}{8.1s+1},\qquad
-G_y(s)=\frac{14.2748}{s(8.1s+1)}}.
-\end{equation}
-The physical coefficients follow directly: $b=1/8.1=0.1234568$ s$^{-1}$ and $k_T=A/\tau=14.2748/8.1=1.762321$ m/(s$^2$ V). The differences between fitted and rounded values are small relative to the specified 10\% aerodynamic uncertainty.
-\page
-
-\subsection{Model Validation}\label{sec:validation}
-The rounded model is evaluated over both the fitting interval (17--60 s) and a held-out tail ($t>60$ s). It predicts
+\subsection{Time Constant, Sensor and Validation}
+For a first-order step, $v_{63}=0.632v_\infty=22.55448$ m/s. Interpolating between 22.53 m/s at 24.0 s and 22.69 m/s at 24.1 s gives
 \begin{align}
-v_{\rm mod}(t)&=2.5A(1-e^{-r/\tau}),\\
-y_{\rm mod}(t)&=2.5A\{r-\tau(1-e^{-r/\tau})\},\qquad r=\max(t-t_0,0).
+t_{63}&=24.0+\frac{22.55448-22.53}{22.69-22.53}(0.1)=24.01530\unit{s},\\
+\tau_{63}&\approx24.01530-15.9=8.11530\unit{s}.
 \end{align}
-The effective onset fitted above is retained. \Fref{fig:validation} checks sensor linearity and velocity residuals; \Tref{tab:validation} reports error magnitudes.
-\plot{validation_sensor}{.91}{Sensor calibration from unsaturated pairs and velocity residuals outside the fitting interval.}{fig:validation}
-\begin{table}[H]\centering\small
-\caption{Validation errors using the rounded design model.}\label{tab:validation}
-\begin{tabularx}{\linewidth}{Xrr}\toprule\thead
-Comparison & Interval [s] & RMSE\\\midrule
-Velocity in fitting window & 17--60 & 0.00533 m/s\\
-Held-out velocity & $>60$ & 0.00436 m/s\\
-Held-out position & $>60$ & 1.686 m\\\bottomrule
+An exponential fit over 17--60 s gives $\tau=8.10393$ s and onset $t_0=15.91584$ s. Midpoint timing shifts this onset without changing $\tau$.
+\plot{velocity_identification}{.64}{Differentiated altitude, adopted first-order model and model driven by the recorded finite input transition.}{fig:velocity}
+Adopting the submitted values gives
+\begin{equation}\label{eq:identified}
+G_v(s)=\frac{14.2748}{8.1s+1},\quad G_y(s)=\frac{14.2748}{s(8.1s+1)},\quad k_s=0.93.
+\end{equation}
+Thus $b=1/8.1=0.1234568$ s$^{-1}$ and $k_T=14.2748/8.1=1.762321$ m/(s$^2$ V). Full substitutions and retained samples are in the \RepoLink{calculations}{worked calculation supplement}.
+\subsection{Model Validation and Parameter Check}\label{sec:validation}
+The rounded model is checked at $t>60$ s, after fitting 17--60 s. Sensor, residual and integrated-position plots are in the \RepoLink{report/figures}{figure folder}. The hold-out uses the same trial, so independent validation remains desirable.
+\begin{table}[H]\raggedright\small
+\caption{Model validation and parameter-check scores.}\label{tab:validation}
+\begin{tabularx}{\linewidth}{Xl}\toprule\thead
+Quantity & Result\\\midrule
+Velocity RMSE, fit / held-out interval & 0.00533 / 0.00436 m/s\\
+Held-out position RMSE & 1.686 m\\
+Measured-input velocity RMSE, 17--60 s / $>60$ s & 0.08114 / 0.00436 m/s\\
+Submitted $A=14.2748$ / $\tau=8.1$ / $k_s=0.93$ & 100\% / 96\% / 100\%\\\bottomrule
 \end{tabularx}\end{table}
-RMSE is $\sqrt{N^{-1}\sum_i(z_i-z_{{\rm mod},i})^2}$. Relative to final velocity, the held-out error is $0.0122\%$. The position comparison in \Fref{fig:posval} reaches almost 4,865 m; small rounding and timing differences accumulate through integration, so its absolute RMSE is larger.
-
-The residuals support the first-order velocity structure and the adopted parameter values for controller design. This validation tests another interval of the same run. It does not establish repeatability across independent experiments or the accuracy of a model-check submission to the laboratory system.
+Integrating $\dot v=[A(u(t)-2.5)-v]/\tau$ from $v(15.7)=0$ gives transient RMSE 0.23\% of final velocity. The laboratory scores in \Fref{fig:paramcheck}, \Aref{app:evidence}, are not confidence intervals.
 \page
 
 \section{Controller Design}\label{sec:design}
-\subsection{Design Process}
-\subsubsection{Plant for Design}
-The design uses \Eref{eq:identified}, $k_s=0.93$ V/m and a 2.5 V hover bias. Its characteristic equation is
+\subsection{Root-Locus Gain Selection}
+With sensor scaling included, the characteristic equation is
 \begin{equation}\label{eq:characteristic}
-1+K_pk_sG_y(s)=0\quad\Rightarrow\quad8.1s^2+s+14.2748(0.93)K_p=0.
+1+K_pk_sG_y(s)=0\quad\Rightarrow\quad8.1s^2+s+13.275564K_p=0.
 \end{equation}
-
-\subsubsection{Design Specifications}
-For a standard underdamped second-order response,
-\begin{equation}\label{eq:overshoot}
-M_p=100e^{-\pi\zeta/\sqrt{1-\zeta^2}},\quad
-M_p<30\%\Rightarrow\zeta>\frac{-\ln0.3}{\sqrt{\pi^2+\ln^20.3}}=0.357857.
-\end{equation}
-Matching the monic form of \Eref{eq:characteristic} to $s^2+2\zeta\omega_ns+\omega_n^2$ yields
-\begin{equation}\label{eq:second}
-\omega_n=\sqrt{\frac{AK_pk_s}{\tau}},\qquad
-\zeta=\frac{1}{2\sqrt{\tau AK_pk_s}},\qquad
-\sigma=\zeta\omega_n=\frac{1}{2\tau}.
-\end{equation}
-Therefore $K_p<1/(4\tau Ak_s\zeta_{\min}^2)=0.0181544$ for nominal overshoot compliance. The added reporting targets are 60 s nominal and 75 s under drag uncertainty, using a 2\% reference band. They supplement the four official requirements. Bias and signal scaling must be calibrated for ideal tracking.
-
-\subsubsection{Gain Selection (Root Locus)}
-The open-loop poles are $0$ and $-1/\tau=-0.1234568$; there are no finite zeros. The real-axis locus lies between the poles, and its two asymptotes have angles $\pm90^\circ$ about centroid $-1/(2\tau)$. Differentiating $K_p(s)=-s(\tau s+1)/(Ak_s)$ gives
-\begin{equation}
-\frac{dK_p}{ds}=0\Rightarrow s_b=-\frac{1}{2\tau}=-0.0617284,\quad
-K_{p,b}=\frac{1}{4\tau Ak_s}=0.00232489.
-\end{equation}
-The supplied gain $K_p=0.01432$ is above breakaway and below the nominal overshoot limit. Since the complex branches have fixed real part $-0.0617284$, a 30 s decay-envelope target ($\sigma\approx4/30$) cannot be imposed by proportional gain alone. Detailed angle and magnitude checks are in \Aref{app:calculations}; the \RepoLink{matlab/design}{root-locus code folder} reproduces the method.
+The open-loop poles are 0 and $-1/8.1=-0.1234568$, with no finite zeros. The real-axis locus lies between these poles. Its asymptotes are $\pm90^\circ$, with centroid and breakaway at $s_b=-1/(2\tau)=-0.0617284$; the breakaway gain is 0.00232489.
+Matching to $s^2+2\zeta\omega_ns+\omega_n^2$ gives
+\begin{align}
+\omega_n&=\sqrt{AK_pk_s/\tau},\quad \zeta=\frac1{2\sqrt{\tau AK_pk_s}},\quad \sigma=\frac1{2\tau},\\
+M_p&=100e^{-\pi\zeta/\sqrt{1-\zeta^2}}<30\%\Rightarrow\zeta>0.357857,\label{eq:overshoot}\\
+K_p&<\frac1{4\tau Ak_s\zeta_{\min}^2}=0.0181544.
+\end{align}
+The implemented gain 0.01432 satisfies the nominal bound. \Fref{fig:locus} checks the selected poles; \Aref{app:calculations} gives the magnitude check, and the \RepoLink{matlab/design}{MATLAB design folder} contains the root-locus method.
+\plot{root_locus}{.76}{Root locus and selected gain. The complex branches have fixed real part, limiting achievable settling speed.}{fig:locus}
+\begin{table}[H]\raggedright\small
+\caption{Manual predictions at $K_p=0.01432$.}\label{tab:design}
+\begin{tabularx}{\linewidth}{Xl}\toprule\thead
+Quantity & Value\\\midrule
+$\omega_n$ / $\zeta$ / $\omega_d$ & 0.153199 / 0.402930 / 0.140212\\
+Closed-loop poles [s$^{-1}$] & $-0.0617284\pm j0.140212$\\
+Overshoot / peak altitude for 5 m & 25.0804\% / 6.25402 m\\
+Peak time $\pi/\omega_d$ / actual 2\% settling & 22.406 s / 54.89 s\\\bottomrule
+\end{tabularx}\end{table}
+Proportional gain cannot meet the earlier 30 s decay-envelope target because $\sigma$ is fixed. The $4/\sigma=64.8$ s approximation is conservative: actual 2\% reference settling is 54.89 s.
 \page
 
-\subsubsection{Design Summary}
-Substituting $K_p=0.01432$ gives $q=14.2748(0.01432)(0.93)=0.1901061$ and
-\begin{equation}
-G_{cl}(s)=\frac{0.1901061}{8.1s^2+s+0.1901061}
-=\frac{0.02346989}{s^2+0.1234568s+0.02346989}.
-\end{equation}
-The roots and response quantities in \Tref{tab:design} are calculated from \Eref{eq:second} and checked against \Fref{fig:locus}.
-\begin{table}[H]\centering\small
-\caption{Manual nominal-controller calculations.}\label{tab:design}
-\begin{tabularx}{\linewidth}{lXr}\toprule\thead
-Quantity & Calculation & Result\\\midrule
-Natural frequency & $\sqrt{0.1901061/8.1}$ & 0.153199 rad/s\\
-Damping ratio & $1/[2\sqrt{8.1(0.1901061)}]$ & 0.402930\\
-Damped frequency & $\omega_n\sqrt{1-\zeta^2}$ & 0.140212 rad/s\\
-Closed-loop poles & $-\sigma\pm j\omega_d$ & $-0.0617284\pm j0.140212$\\
-Overshoot & $100e^{-\pi(0.402930)/\sqrt{1-0.402930^2}}$ & 25.0804\%\\
-Peak time & $\pi/0.140212$ & 22.4060 s\\
-Peak altitude & $5(1+0.250804)$ & 6.25402 m\\\bottomrule
-\end{tabularx}\end{table}
-\plot{root_locus}{.86}{Proportional root locus. The selected poles satisfy the 30\% overshoot boundary; the 30 s envelope target is beyond the attainable complex branches.}{fig:locus}
-The exact step response is
+\subsection{Original Simulink Model and Simulation Tests}\label{sec:simulation}
+\Fref{fig:originalmodel} is the original supplied model. Its 0.93 gains scale reference and altitude, 0.01432 is the proportional gain, and the two 2.5 V terms add and remove hover. The velocity lag is followed by the altitude integrator.
+\repfig{data/session2}{../../data/session2/simulink_model.png}{.94}{Original Simulink model. \RepoLink{matlab/simulink}{Native model-building and test scripts}.}{fig:originalmodel}
+The supplied scope starts from zero altitude with a 2.5 m reference, changing to 5 m at about 2.5 s. This differs from the isolated 0-to-5 m design test. \Fref{fig:simcomparison} compares the original trace with Python using the same startup sequence. The original scope image is retained in \Fref{fig:originalscope}, \Aref{app:demo}.
+\plot{simulink_comparison}{.85}{Supplied Simulink altitude and command, replotted from the scope and compared with the matching Python prediction.}{fig:simcomparison}
+The supplied altitude peaks near 6.226 m (24.51\% above 5 m); the matched prediction peaks at 6.231 m. Their altitude RMSE is 0.0115 m, close to the 0.0124 m per-pixel extraction scale. The reconstructed maximum command is 2.56441 V.
+For the isolated 5 m step, the manual prediction is
 \begin{equation}\label{eq:exactstep}
-y(t)=5\!\left[1-e^{-\sigma t}\!\left(\cos\omega_dt+\frac{\sigma}{\omega_d}\sin\omega_dt\right)\right].
+y=5\left[1-e^{-0.0617284t}\{\cos(0.140212t)+0.44025\sin(0.140212t)\}\right].
 \end{equation}
-The usual $4/\sigma=64.8$ s settling approximation is conservative here. The envelope bound $-\ln[0.02\sqrt{1-\zeta^2}]/\sigma=64.81$ s and the actual final 2\% crossing, 54.89 s, are different quantities.
+It predicts 25.08\% overshoot and command range 2.48330--2.56659 V. The reconstruction uses 0--5 V command and 0--10 V sensor limits, zero initial states and 100 s duration. Saturation dialogs and the original native model file were not supplied.
 \page
-\subsection{Simulink Model and Results}\label{sec:simulation}
-\subsubsection{Block Diagram Implementation}
-\Fref{fig:originalmodel} is the supplied Simulink diagram. It uses 0.93 V/m reference/sensor gains, $K_p=0.01432$, hover addition/subtraction, a velocity lag and position integrator. The reconstruction sets command limits to 0--5 V and sensor limits to 0--10 V.
-\repfig{data/session2}{../../data/session2/simulink_model.png}{1}{Supplied Simulink architecture. Native model-building and execution scripts: \RepoLink{matlab/simulink}{Simulink folder}.}{fig:originalmodel}
 
-\subsubsection{Comparison with the Supplied Simulation}
-The supplied scope starts at zero altitude with a 2.5 m reference, changing to 5 m at about 2.5 s. Python reproduces that same reference sequence in \Fref{fig:simcomparison}; it is not the isolated 0-to-5 m design step. The altitude RMSE against that prediction is approximately 0.0115 m.
-\plot{simulink_altitude_comparison}{.92}{Supplied Simulink altitude, replotted and compared with Python for the same reference sequence.}{fig:simcomparison}
-The supplied curve peaks at $\approx6.226$ m (24.51\% above 5 m); the matched model predicts 6.231 m and maximum command 2.56441 V. For the isolated 5 m step, $u(0^+)=2.5+0.01432(0.93)(5)=2.56659$ V. Full settings and nominal results are in \Aref{app:simulink}.
+\subsection{Physical Controller Schematic}\label{sec:hardware}
+\Fref{fig:circuit} enlarges the KiCad stages; panels share V1 and V2. The bias/DAQ view is in \Aref{app:circuit} and the board photograph is \Fref{fig:board}.
+\repfig{hardware/kicad}{kicad_signal_stages.pdf}{.97}{Enlarged KiCad stages: U1 attenuates the reference--sensor difference; U2 amplifies it; U3 adds loaded hover bias. $K_p=0.01(1.47)(0.97428)=0.0143219$. \RepoLink{hardware/kicad}{Editable full schematic and BOM}.}{fig:circuit}
+
 \page
-\subsubsection{Controller Hardware Implementation}\label{sec:hardware}
-\Fref{fig:circuit} shows the revised KiCad controller with its bias and DAQ connections. The physical three-stage circuit was connected in this configuration during the controller test. Capacitors and unused offset-pin graphics are omitted from the drawing. The board photograph remains in \Aref{app:photos}.
-\repfig{hardware/kicad}{kicad_controller.pdf}{.94}{Three-stage controller with bias and DAQ connections. Editable source: \RepoLink{hardware/kicad}{KiCad folder}.}{fig:circuit}
-\begin{table}[H]\centering\small
-\caption{Controller component values and stage calculations.}\label{tab:components}
-\begin{tabularx}{\linewidth}{p{15mm}p{58mm}X}\toprule\thead
-Stage & Values & Function\\\midrule
-U1 & $R_1=R_3=100$ k$\Omega$; $R_2=R_4=1$ k$\Omega$ & $V_1=0.01(r_v-y_v)$.\\
-U2 & $R_5=4.7$ k$\Omega$; $R_6=10$ k$\Omega$ & $V_2=1.47V_1$.\\
-U3 & $R_7$--$R_{10}=100$ k$\Omega$ & Loaded gain $g_3=0.974280$.\\
-Bias & $R_{11}=3.9$ k$\Omega$, $R_{12}=1.2$ k$\Omega$, $R_{13}=22$ k$\Omega$, P1 = 10 k$\Omega$ & $R_{11}$ to ground; $R_{13}$ to $-15$ V.\\\bottomrule
-\end{tabularx}\end{table}
-All three LM741 stages use pin 7 for $+15$ V and pin 4 for $-15$ V, with common DAQ ground. Loading of the unbuffered bias network must be included:
-\begin{align}
-u_0&=-\frac{100}{100+5.423001}(-2.635575)=2.500000\unit{V},\\
-K_{p,\rm circuit}&=0.01(1.47)\frac{1+100/(100+5.423001)}2=0.0143219.
-\end{align}
-Full loading and interface calculations are in \Aref{app:circuit}; test adjustment is in \Sref{sec:tests}.
-\page
+
 \section{Controller Tests}\label{sec:tests}
-\subsection{Connected Test Setup and Adjustment}
-The complete physical circuit was connected as in \Fref{fig:circuit}: DAC-1 for reference, DAC-0 for sensor feedback, ADC-1 for command and ADC-2 for sensor monitoring. The common-ground $\pm15$ V supply powered all three stages. The physical controller operated in closed loop with the simulated plant.
-
-The physical potentiometer was adjusted until the input was approximately 2.565 V to improve setpoint tracking and minimise overshoot. Its exact measurement instant was not logged. The value is close to the model's initial 5 m step command, 2.56659 V, and the reconstructed Simulink maximum, 2.56441 V. It does not replace the nominal 2.500 V zero-error hover term; \Aref{app:adjustment} gives the full calculation.
-
-\subsection{Experimental Results and Comparison}
-At 86.10 s the display gives reference 5.033 m, height 4.897 m and command 2.498 V. This terminal command and the reported potentiometer adjustment are separate observations (\Aref{app:demo}). \Fref{fig:hardware} replots the recorded controller response in Python.
-\plot{hardware_comparison}{.73}{Connected controller response and nominal prediction for the same 5.033 m reference.}{fig:hardware}
-The approximate peak is 6.229 m at 22.02 s. From the displayed reference and final height,
+\subsection{Connected Test and Potentiometer Adjustment}
+The complete circuit was connected: DAC-1 reference, DAC-0 sensor, ADC-1 command and ADC-2 sensor monitor, with common-ground $\pm15$ V rails. The potentiometer was adjusted until the input was approximately 2.565 V to improve tracking and minimise overshoot; its measurement node and time were not logged.
+The observation is close to the predicted initial command 2.56659 V; it differs from the 2.500 V zero-error bias and terminal command 2.498 V (\Aref{app:circuit}).
+\subsection{Experimental Response and Comparison}
+The required tracking screenshot (\Fref{fig:demo}, \Aref{app:demo}) records the demonstration, which received full marks (20/20). At 86.10 s, reference is 5.033 m and height is 4.897 m. \Fref{fig:hardware} compares the digitised response with its model.
+\plot{hardware_comparison}{.66}{Connected controller response replotted with Python and compared with the nominal prediction.}{fig:hardware}
+The approximate peak is 6.229 m at 22.02 s. The terminal error and reference-based performance are
 \begin{align}
-\eta_{\rm track}&=100\left(1-\frac{|5.033-4.897|}{5.033}\right)=97.30\%,\\
-M_{p,\rm ref}&\approx100\frac{6.22917-5.033}{5.033}=23.77\%.
+e_f&=5.033-4.897=0.136\unit{m},\\
+\eta&=100(1-0.136/5.033)=97.30\%,\quad M_{p,\rm ref}=100(6.229-5.033)/5.033=23.77\%.
 \end{align}
-
+\begin{table}[H]\raggedright\small
+\caption{Simulation and connected-controller comparison.}\label{tab:performance}
+\begin{tabularx}{\linewidth}{P{33mm}XXX}\toprule\thead
+Metric & Isolated 5 m model & Original Simulink & Connected circuit\\\midrule
+Reference sequence & 0 to 5 m & 2.5 to 5 m & Near 0 to 5.033 m\\
+Peak altitude & 6.254 m & $\approx6.226$ m & $\approx6.229$ m\\
+Peak above reference & 25.08\% & $\approx24.51\%$ & $\approx23.77\%$\\
+Terminal tracking & 100\% ideal & $\approx99.98\%$ & 97.30\%\\\bottomrule
+\end{tabularx}\end{table}
+Terminal height passes the 8\% band but misses the 2\% band, so physical 2\% settling is unconfirmed. Overshoot normalised to terminal height is 27.20\%, also below 30\%.
 \page
-\subsection{Performance Analysis}\label{sec:evaluation}
-\Tref{tab:performance} compares model, supplied Simulink and connected-controller evidence. The Simulink startup sequence is matched separately in \Fref{fig:simcomparison}; image-derived values are approximate.
-\begin{table}[H]\centering\small
-\caption{Model, supplied Simulink and connected-controller comparison.}\label{tab:performance}
-\begin{tabularx}{\linewidth}{p{36mm}XXX}\toprule\thead
-Metric & Nominal calculation / Python & Supplied Simulink & Connected circuit\\\midrule
-Reference & 0 to 5 m & 2.5 to 5 m & Near 0 to 5.033 m\\
-Peak altitude & 6.25402 m & $\approx6.226$ m & $\approx6.229$ m\\
-Peak clock time & 22.405 s & $\approx24.0$ s & $\approx22.02$ s\\
-Peak above final reference & 25.0804\% & $\approx24.51\%$ & $\approx23.77\%$\\
-Terminal tracking & 100\% ideal & $\approx99.98\%$ & 97.30\%\\
-2\% band entry & 54.89 s & $\approx56.05$ s on source clock & Not established\\\bottomrule
+
+\subsection{Evaluation Against Specifications}\label{sec:evaluation}
+\Tref{tab:evaluation} distinguishes observed nominal performance from tolerance predictions. \Fref{fig:aerodynamic} varies drag by $\pm10\%$ while holding the identified thrust slope fixed.
+\begin{table}[H]\raggedright\small
+\caption{Specification evaluation and limitations.}\label{tab:evaluation}
+\begin{tabularx}{\linewidth}{P{34mm}Xl}\toprule\thead
+Requirement & Evidence & Outcome\\\midrule
+Tracking $>92\%$ & 97.30\% in the retained connected test. & Nominal pass\\
+Overshoot $<30\%$ & Model 25.08\%; circuit $\approx23.77\%$ about reference. & Nominal pass\\
+Drag uncertainty $\pm10\%$ & Predicted overshoot 21.15--29.45\%. & Drag-only pass\\
+Components $\pm10\%$ & 2,048 corners: maximum error 48.79\%, overshoot 38.95\%. & Not guaranteed\\\bottomrule
 \end{tabularx}\end{table}
-The physical terminal height lies in the 8\% reference band (4.63036--5.43564 m), outside the 2\% band (4.93234--5.13366 m). Overshoot normalised to terminal height is 27.20\%; exact physical settling remains unconfirmed. The Simulink clock includes a reference change at 2.5 s and initial motion from zero.
-\begin{table}[H]\centering\small
-\caption{Evaluation against the laboratory requirements.}\label{tab:evaluation}
-\begin{tabularx}{\linewidth}{p{29mm}XX}\toprule\thead
-Criterion & Evidence & Evaluation\\\midrule
-Tracking $>92\%$ & 97.30\%; error 0.136 m. & Pass: retained nominal test.\\
-Overshoot $<30\%$ & Python 25.08\%; experiment 23.77\%. & Pass: nominal responses.\\
-Aerodynamics $\pm10\%$ & Overshoot 21.15--29.45\%. & Pass: drag-only predictions.\\
-Components $\pm10\%$ & Corner error 48.79\%; overshoot 38.95\%. & Fail: independent tolerances.\\\bottomrule
-\end{tabularx}\end{table}
-\subsection{Discussion}
-Nominal peaks agree closely, but bias and unequal reference/feedback scaling can change tracking. With recalibrated hover and stage coefficients from \Aref{app:circuit},
-\begin{equation}\label{eq:ratio}
-K_f=a_fg_2g_3,\qquad y_\infty/x_\infty=a_r/a_f.
+\plot{aerodynamic_robustness}{.70}{Responses for nominal drag and $\pm10\%$ drag uncertainty, at unchanged thrust slope and gain.}{fig:aerodynamic}
+For joint scalar drag/gain uncertainty the admissible nominal gain is
+\begin{equation}\label{eq:jointbound}
+K_{p,0}<\frac{(0.9b)^2}{4k_Tk_s\zeta_{\min}^2(1.1)}=0.0133683.
 \end{equation}
-The 2,048 loop-resistor/drag corners fail robustness; joint scalar drag/gain variation also gives 31.42\% overshoot. A +2 mV input bias predicts +0.150 m offset. Detailed uncertainty and correction calculations are in \Aref{app:calculations}; these are predictions, not additional physical trials.
-\page
+The implemented 0.01432 exceeds this stricter bound, giving 31.42\% worst-case scalar overshoot. Independent resistor mismatch can also change the DC ratio $y_\infty/x_\infty=a_r/a_f$; nominal type number does not remove that error. \Aref{app:circuit} gives the coefficient calculations.
+\subsection{Conclusion and Recommendations}\label{sec:conclusion}\label{sec:recommendations}
+The controller meets nominal tracking and overshoot requirements, consistent with the full demo mark. Drag-only predictions pass; independent component tolerances and experimental repeatability remain limitations.
+Use matched reference/feedback ratios, reduce both U1 1 k$\Omega$ resistors to matched 680 $\Omega$ values for $K_p\approx0.009739$, and recalibrate the loaded hover output. The corrected scalar worst-case overshoot is 23.44\%; the 5 m bias allowance becomes 3.623 mV. These changes require physical retesting. Future tests should retain repeated logs and a defined disturbance record.
 
-\section{Conclusion and Recommendations}\label{sec:conclusion}
-\subsection{Conclusion}
-The laboratory workflow established a physical model, identified its parameters, evaluated a proportional controller and compared its predicted response with retained hardware evidence. Differentiating altitude gave the velocity model $G_v(s)=14.2748/(8.1s+1)$; integration gives the position plant $G_y(s)=14.2748/[s(8.1s+1)]$. Sensor calibration gave $k_s=0.93$ V/m.
-
-The three-stage analogue controller includes the 2.5 V hover bias. Accounting for loading in the bias network gives $K_p=0.0143219$, consistent with the adopted 0.01432 gain. Root-locus and time-response calculations predict 25.08\% overshoot and 54.89 s settling in the 2\% reference band. The retained experiment gives 97.30\% tracking accuracy and approximately 23.77\% overshoot about the reference, satisfying the nominal tracking and overshoot criteria.
-
-The robustness evaluation identifies a limitation: drag uncertainty alone passes, but joint drag/gain variation and independent resistor tolerances can exceed the requirements. One retained trial also cannot establish experimental repeatability. These findings support the nominal design and specify the changes needed for a stronger tolerance claim.
-
-\subsection{Recommendations}\label{sec:recommendations}
-\begin{enumerate}
-\item \textbf{Match the reference and feedback ratios.} Use matched resistors or trim U1 to below 1\% ratio mismatch; measure both signal slopes.
-\item \textbf{Add overshoot margin.} Replace both 1 k$\Omega$ U1 resistors with matched 680 $\Omega$ values. The proposed loaded gain is 0.00974 and worst scalar-case overshoot is 23.44\%.
-\item \textbf{Recalibrate the loaded hover command.} Trim to 2.500 V after component changes. At the revised gain, the 5 m bias allowance is 3.623 mV.
-\item \textbf{Retain repeat tests and raw logs.} Record independent identification and controller trials, command headroom and defined disturbance tests to assess repeatability and robustness.
-\end{enumerate}
-
-\subsection{Final Remarks}
-The report documents the complete design process and the limits of the supplied evidence. Proposed circuit changes require physical retesting. Worked derivations are in \Aref{app:calculations}; \Aref{app:repository} links each supporting folder and the complete \href{\RepoRoot}{GitHub repository}.
-
-
-================================================================================
-FILE: report/sections/circuit.tex
-================================================================================
-\begin{circuitikz}[american]
-% Default op-amp polarity: upper input is inverting, lower input non-inverting.
-\node[op amp] (a) at (4.5,0) {U1};
-\draw (0,.5) node[left,align=right]{DAC-0\\$y_v$} to[R,l=$R_3\ 100\,\mathrm{k}\Omega$] (2.8,.5) -- (a.-);
-\draw (0,-.5) node[left,align=right]{DAC-1\\$r_v$} to[R,l_=$R_1\ 100\,\mathrm{k}\Omega$] (2.8,-.5) -- (a.+);
-\draw (2.8,-.5) to[R,l=$R_2\ 1\,\mathrm{k}\Omega$] (2.8,-1.9) node[ground]{};
-\draw (a.out)--(6.5,0) node[right]{$V_1$};
-\draw (2.8,.5) -- (2.8,1.45) to[R,l=$R_4\ 1\,\mathrm{k}\Omega$] (6,1.45) -- (6,0);
-\draw (0,.5) -- (0,1.4) node[left]{ADC-2 monitor};
-\node[align=left,anchor=west] at (7.3,.1){$V_1=0.01(r_v-y_v)$\\pin 2: $-$; pin 3: $+$\\pin 6: output};
-\node[anchor=west] at (-1.3,2.45){\textbf{U1: subtract and attenuate}};
-\node[op amp] (c) at (4.5,-4.3){U2};
-\draw (0,-5.9) node[left]{$V_1$} -- (3.25,-5.9) -- (3.25,-4.8) -- (c.+);
-\draw (c.-) -- (2.8,-3.8) to[R,l_=$R_6\ 10\,\mathrm{k}\Omega$] (2.8,-5.2) node[ground]{};
-\draw (c.out) -- (6.5,-4.3) node[right]{$V_2$};
-\draw (2.8,-3.8) -- (2.8,-2.85) to[R,l=$R_5\ 4.7\,\mathrm{k}\Omega$] (6,-2.85) -- (6,-4.3);
-\node[align=left,anchor=west] at (7.3,-4.3){$V_2=1.47V_1$\\pin 3: input\\pin 6: output};
-\node[anchor=west] at (-1.3,-2.0){\textbf{U2: gain 1.47}};
-\node[op amp] (e) at (4.5,-9.2){U3};
-\draw (0,-9.7) node[left]{$V_2$} to[R,l_=$R_7\ 100\,\mathrm{k}\Omega$] (2.8,-9.7) -- (e.+);
-\draw (2.8,-9.7) to[R,l=$R_8\ 100\,\mathrm{k}\Omega$] (2.8,-11.1) node[ground]{};
-\draw (0,-8.7) node[left,align=right]{P1 wiper\\see Figure~\ref*{fig:biasnetwork}} to[R,l=$R_9\ 100\,\mathrm{k}\Omega$] (2.8,-8.7)--(e.-);
-\draw (e.out) -- (6.5,-9.2) node[right]{$u$ (ADC-1)};
-\draw (2.8,-8.7) -- (2.8,-7.75) to[R,l=$R_{10}\ 100\,\mathrm{k}\Omega$] (6,-7.75) -- (6,-9.2);
-\node[align=left,anchor=west] at (7.3,-10.6){$u=g_3V_2+u_0$\\trim $u_0=2.500$ V\\command range: 0--5 V};
-\node[anchor=west] at (-1.3,-6.65){\textbf{U3: calibrated hover bias}};
-\end{circuitikz}
 
 
 ================================================================================
@@ -4327,7 +3985,7 @@ set -euo pipefail
 task_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$task_root"
 python3 analysis/analyse.py
-python3 scripts/make_indexes.py
+python3 scripts/export_diagrams.py
 latexmk -pdf -interaction=nonstopmode -halt-on-error -cd calculations/main.tex
 cp calculations/main.pdf calculations/PTRJUN003_Lab2_Calculations.pdf
 latexmk -pdf -interaction=nonstopmode -halt-on-error -cd report/main.tex
@@ -4356,14 +4014,15 @@ def check():
     reader = PdfReader(PDF)
     labels = reader.page_labels
     reference_index = labels.index("R1")
-    intro_index = reference_index - 14
+    intro_index = reference_index - 9
     main_labels = labels[intro_index:reference_index]
-    assert main_labels == [str(i) for i in range(1, 15)], main_labels
-    assert "Introduction" in reader.pages[intro_index].extract_text()
-    assert "Final Remarks" in reader.pages[reference_index - 1].extract_text()
+    assert main_labels == [str(i) for i in range(1, 10)], main_labels
+    assert "System Modelling" in reader.pages[intro_index].extract_text()
+    assert "Conclusion and Recommendations" in reader.pages[reference_index - 1].extract_text()
+    assert len(reader.pages) - reference_index - 1 == 3
     assert labels[reference_index + 1] == "A1"
-    assert "List of Figures" in reader.pages[intro_index - 2].extract_text()
-    assert "List of Tables" in reader.pages[intro_index - 1].extract_text()
+    assert len(reader.pages) == 15
+    assert "Contents" in reader.pages[1].extract_text()
     internal_count = github_count = 0
     destinations = reader.named_destinations
     github_urls = set()
@@ -4390,7 +4049,7 @@ def check():
     assert internal_count > 50
     assert not any("??" in page.extract_text() for page in reader.pages)
     result = {
-        "main_pages": 14,
+        "main_pages": 9,
         "excluded_title_pages": 1,
         "front_matter_pages": intro_index - 1,
         "reference_pages": 1,
@@ -4411,85 +4070,55 @@ if __name__ == "__main__":
 
 
 ================================================================================
-FILE: scripts/make_indexes.py
+FILE: scripts/export_diagrams.py
 ================================================================================
-"""Make portable clickable indexes for the report's local folder links."""
+"""Export the report's exact TikZ/Circuitikz diagrams as vector PDF and PNG."""
 
 from pathlib import Path
-from html import escape
-from urllib.parse import quote
+import subprocess
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-folders = [
-    ".",
-    "report",
-    "data",
-    "data/session1",
-    "data/session2",
-    "analysis",
-    "matlab",
-    "hardware",
-    "results",
-    "scripts",
-    "config",
-    "calculations",
-    "analysis/modules",
-    "matlab/config",
-    "matlab/identification",
-    "matlab/design",
-    "matlab/validation",
-    "matlab/simulink",
-    "matlab/plots",
-    "hardware/kicad",
-    "results/matlab",
+FIGURES = ROOT / "report/figures"
+SOURCE = ROOT / "report/sections/body.tex"
+DIAGRAMS = [
+    ("Forces and Differential Equation", "tikzpicture", "free_body_diagram"),
+    ("Complete Signal Architecture", "tikzpicture", "system_block_diagram"),
+    ("Step-Test Circuit and Recorded Input", "circuitikz", "identification_step_circuit"),
 ]
-for folder in folders:
-    p = ROOT / folder
-    links = []
-    for f in sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
-        if (
-            f.name.startswith(".")
-            or f.name == "__pycache__"
-            or f.name == "index.html"
-            or f.suffix
-            in [".log", ".aux", ".toc", ".out", ".fls", ".fdb_latexmk", ".lof", ".lot"]
-            or f.name == "main.pdf"
-        ):
-            continue
-        target = quote(f.name) + ("/" if f.is_dir() else "")
-        links.append(
-            '<li><a href="'
-            + target
-            + '">'
-            + escape(f.name)
-            + ("/" if f.is_dir() else "")
-            + "</a></li>"
-        )
-    if folder == ".":
-        links.insert(
-            0, '<li><a href="report/PTRJUN003_Lab2_Report.pdf">Compiled report</a></li>'
-        )
-    title = "EEE3094S Lab 2 / " + folder
-    parent = (
-        ""
-        if folder == "."
-        else '<p><a href="'
-        + ("../" * len(Path(folder).parts))
-        + 'index.html">Project home</a></p>'
-    )
-    html = (
-        '<!doctype html><meta charset="utf-8"><title>'
-        + escape(title)
-        + "</title><style>body{font:16px system-ui;max-width:850px;margin:50px auto;padding:0 25px;color:#174c66}li{margin:12px 0}a{color:#176795}p{line-height:1.6}</style><h1>"
-        + escape(title)
-        + "</h1>"
-        + parent
-        + "<p>Supporting files for Junaid Allan Pieters, PTRJUN003. Open the report for measured results, model predictions and their limits.</p><ul>"
-        + "".join(links)
-        + "</ul>"
-    )
-    (p / "index.html").write_text(html)
-print("Portable folder indexes created.")
+
+
+def export():
+    source = SOURCE.read_text()
+    preamble = r"""\documentclass[12pt,border=3mm]{standalone}
+\usepackage{amsmath,xcolor,tikz,circuitikz}
+\usetikzlibrary{arrows.meta,positioning,calc}
+\definecolor{AngelBlue}{HTML}{8FC9E6}
+\newcommand{\unit}[1]{\,\mathrm{#1}}
+\begin{document}
+"""
+    with tempfile.TemporaryDirectory(prefix="lab2_diagrams_") as directory:
+        work = Path(directory)
+        for section, environment, name in DIAGRAMS:
+            start = source.index(r"\begin{" + environment + "}", source.index(section))
+            end_marker = r"\end{" + environment + "}"
+            end = source.index(end_marker, start) + len(end_marker)
+            diagram = source[start:end]
+            (work / f"{name}.tex").write_text(preamble + diagram + "\n\\end{document}\n")
+            subprocess.run(
+                ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", f"{name}.tex"],
+                cwd=work, check=True, stdout=subprocess.DEVNULL,
+            )
+            (FIGURES / f"{name}.pdf").write_bytes((work / f"{name}.pdf").read_bytes())
+            subprocess.run(
+                ["pdftocairo", "-singlefile", "-scale-to", "2400", "-png",
+                 str(FIGURES / f"{name}.pdf"), str(FIGURES / name)], check=True,
+            )
+            print(f"Exported {name}.pdf and {name}.png")
+
+
+if __name__ == "__main__":
+    export()
 
 
 ================================================================================

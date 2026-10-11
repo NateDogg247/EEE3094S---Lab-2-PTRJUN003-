@@ -3,7 +3,12 @@
   "provenance": "Student clarification in this conversation",
   "test_type": "Physical analogue controller connected to the simulated altitude plant",
   "full_three_op_amp_circuit_connected": true,
-  "channel_map": {"DAC-1":"Reference", "DAC-0":"Sensor feedback", "ADC-1":"Controller command", "ADC-2":"Sensor monitor"},
+  "channel_map": {
+    "DAC-1": "Reference",
+    "DAC-0": "Sensor feedback",
+    "ADC-1": "Controller command",
+    "ADC-2": "Sensor monitor"
+  },
   "reported_adjustment": {
     "method": "Adjusted the potentiometer in the physical circuit",
     "reported_input_V": 2.565,
@@ -15,5 +20,6 @@
   "nominal_model_hover_V": 2.5,
   "terminal_display_command_V": 2.498,
   "terminal_display_time_s": 86.1,
-  "identification_test_connection": "The new full-circuit confirmation applies to the controller test; it does not change the Session 1 CSV interpretation."
+  "identification_test_connection": "The new full-circuit confirmation applies to the controller test; it does not change the Session 1 CSV interpretation.",
+  "student_reported_demo_mark": "Full marks (user statement; no invented marking sheet)"
 }

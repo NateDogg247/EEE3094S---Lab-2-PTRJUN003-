@@ -21,6 +21,14 @@
   "nominal_kp": 0.01432,
   "b": 0.1234567901234568,
   "kT": 1.762320987654321,
+  "measured_input_velocity_rmse_fit_window": 0.08113988119361347,
+  "measured_input_velocity_rmse_holdout": 0.004359682646004211,
+  "parameter_checker": {
+    "A_score_percent": 100,
+    "tau_score_percent": 96,
+    "sensor_score_percent": 100,
+    "provenance": "Supplied Helicopter Parameter Check screenshot; not confidence intervals"
+  },
   "simulation_nominal": {
     "overshoot_percent": 25.080374648985497,
     "peak_m": 6.254018732449275,
